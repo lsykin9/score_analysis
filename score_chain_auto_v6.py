@@ -18,7 +18,7 @@ def read_config(path="参数配置.xlsx"):
         (301, int(cfg.get("line", 430)), cfg.get("G_301-线", 1.0)),
         (int(cfg.get("line", 430)) + 1, float("inf"), cfg.get("H_线下", 0.8))
     ]
-
+    print("weights")
     # 排名加分（自动识别“前N奖励”）
     rank_bonus = {
         int(re.findall(r"\d+", k)[0]): v
