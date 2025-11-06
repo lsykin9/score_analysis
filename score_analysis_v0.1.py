@@ -97,17 +97,29 @@ def main():
     config = read_config()
     df_new = pd.read_excel("最新成绩.xlsx")
     
-    # 检查列数，判断是否包含总分
-    if df_new.shape[1] == 2:
-        # 只有姓名和排名
+    # 定义各科科目
+    subjects = ["语文", "数学", "英语", "物理", "化学", "生物"]
+    
+    # 检查列数，判断数据格式
+    col_count = df_new.shape[1]
+    
+    if col_count == 2:
+        # 格式1: 姓名、排名
         df_new.columns = ["姓名", "本次排名"]
         has_score = False
-    elif df_new.shape[1] == 3:
-        # 包含姓名、排名和总分
+        has_subjects = False
+    elif col_count == 3:
+        # 格式2: 姓名、排名、总分
         df_new.columns = ["姓名", "本次排名", "本次总分"]
         has_score = True
+        has_subjects = False
+    elif col_count == 9:
+        # 格式3: 姓名、排名、总分、6科成绩
+        df_new.columns = ["姓名", "本次排名", "本次总分"] + subjects
+        has_score = True
+        has_subjects = True
     else:
-        raise ValueError("最新成绩.xlsx格式错误！应包含2列（姓名、排名）或3列（姓名、排名、总分）")
+        raise ValueError(f"最新成绩.xlsx格式错误！当前列数：{col_count}\n支持格式：\n- 2列（姓名、排名）\n- 3列（姓名、排名、总分）\n- 9列（姓名、排名、总分、语文、数学、英语、物理、化学、生物）")
 
     if os.path.exists("成绩总表.xlsx"):
         df_all = pd.read_excel("成绩总表.xlsx")
@@ -115,22 +127,36 @@ def main():
         df_all = pd.DataFrame()
 
     if df_all.empty:
-        if has_score:
+        if has_subjects:
+            # 包含各科成绩
+            rename_dict = {"本次排名": "排名_第1次", "本次总分": "总分_第1次"}
+            for subj in subjects:
+                rename_dict[subj] = f"{subj}_第1次"
+            df_all = df_new.rename(columns=rename_dict)
+        elif has_score:
+            # 只有总分
             df_all = df_new.rename(columns={"本次排名": "排名_第1次", "本次总分": "总分_第1次"})
         else:
+            # 只有排名
             df_all = df_new.rename(columns={"本次排名": "排名_第1次"})
     else:
         # 计算当前是第几次考试
         rank_cols = [col for col in df_all.columns if col.startswith("排名_")]
         next_num = len(rank_cols) + 1
-        next_rank_col = f"排名_第{next_num}次"
-        next_score_col = f"总分_第{next_num}次"
+        
+        # 构建重命名字典
+        rename_dict = {
+            "本次排名": f"排名_第{next_num}次"
+        }
         
         if has_score:
-            df_new_renamed = df_new.rename(columns={"本次排名": next_rank_col, "本次总分": next_score_col})
-        else:
-            df_new_renamed = df_new.rename(columns={"本次排名": next_rank_col})
+            rename_dict["本次总分"] = f"总分_第{next_num}次"
         
+        if has_subjects:
+            for subj in subjects:
+                rename_dict[subj] = f"{subj}_第{next_num}次"
+        
+        df_new_renamed = df_new.rename(columns=rename_dict)
         df_all = pd.merge(df_all, df_new_renamed, on="姓名", how="outer").fillna(0)
 
     df_all.to_excel("成绩总表.xlsx", index=False)
