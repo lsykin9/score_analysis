@@ -60,89 +60,114 @@ st.markdown("""
 st.title("📊 学生成绩进步评分系统")
 st.markdown("---")
 
+# 初始化 session state 来存储上传的成绩文件
+if 'score_files' not in st.session_state:
+    st.session_state.score_files = []
+if 'analysis_started' not in st.session_state:
+    st.session_state.analysis_started = False
+if 'config_file_content' not in st.session_state:
+    st.session_state.config_file_content = None
+
 # 侧边栏 - 文件上传
 with st.sidebar:
     st.header("📁 文件上传")
     
+    # 参数配置文件上传
     config_file = st.file_uploader(
         "1️⃣ 上传参数配置文件",
         type=['xlsx'],
-        help="上传包含评分参数的Excel文件"
+        help="上传包含评分参数的Excel文件",
+        key="config_uploader"
     )
+    
+    # 保存配置文件到 session state
+    if config_file is not None:
+        st.session_state.config_file_content = config_file.getvalue()
+        st.success("✅ 配置文件已上传")
     
     st.markdown("---")
     st.subheader("📚 上传成绩文件")
     
-    # 使用选项卡区分两种模式
-    upload_mode = st.radio(
-        "选择上传模式",
-        ["单次分析（仅查看最新成绩）", "进步分析（对比两次成绩）"],
-        help="单次分析：只看当前成绩和排名\n进步分析：对比前后两次成绩，计算进步得分"
+    # 成绩文件上传 - 支持多次上传
+    score_file = st.file_uploader(
+        "2️⃣ 上传成绩文件（可多次上传）",
+        type=['xlsx'],
+        help="上传学生成绩Excel文件，可以连续上传多次考试成绩",
+        key=f"score_uploader_{len(st.session_state.score_files)}"
     )
     
-    if upload_mode == "单次分析（仅查看最新成绩）":
-        score_file = st.file_uploader(
-            "2️⃣ 上传成绩文件",
-            type=['xlsx'],
-            help="上传包含学生成绩的Excel文件（支持2/3/9列格式）",
-            key="single_score"
-        )
-        history_file = None
-        first_score_file = None
-    else:
-        first_score_file = st.file_uploader(
-            "2️⃣ 上传第一次成绩",
-            type=['xlsx'],
-            help="上传第一次考试的成绩Excel文件",
-            key="first_score"
-        )
-        score_file = st.file_uploader(
-            "3️⃣ 上传第二次成绩",
-            type=['xlsx'],
-            help="上传第二次考试的成绩Excel文件（将与第一次对比）",
-            key="second_score"
-        )
-        history_file = None  # 在进步分析模式下，会自动生成历史数据
+    # 添加到列表
+    if score_file is not None and not st.session_state.analysis_started:
+        # 检查是否已存在同名文件
+        file_names = [f['name'] for f in st.session_state.score_files]
+        if score_file.name not in file_names:
+            st.session_state.score_files.append({
+                'name': score_file.name,
+                'content': score_file.getvalue()
+            })
+            st.rerun()
+    
+    # 显示已上传的文件列表
+    if st.session_state.score_files:
+        st.markdown("### 📋 已上传的成绩文件")
+        for idx, file_info in enumerate(st.session_state.score_files):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.text(f"{idx + 1}. {file_info['name']}")
+            with col2:
+                if st.button("🗑️", key=f"delete_{idx}", disabled=st.session_state.analysis_started):
+                    st.session_state.score_files.pop(idx)
+                    st.rerun()
+    
+    st.markdown("---")
+    
+    # 操作按钮
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🚀 开始分析", type="primary", disabled=st.session_state.analysis_started or len(st.session_state.score_files) == 0):
+            st.session_state.analysis_started = True
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 重置", disabled=not st.session_state.analysis_started):
+            st.session_state.score_files = []
+            st.session_state.analysis_started = False
+            st.session_state.config_file_content = None
+            st.rerun()
     
     st.markdown("---")
     st.markdown("### ℹ️ 使用说明")
-    if upload_mode == "单次分析（仅查看最新成绩）":
-        st.info("""
-        📌 **单次分析模式**
-        1. 上传参数配置文件
-        2. 上传成绩文件
-        3. 查看成绩统计和排名
-        4. 查看偏科检测
-        """)
-    else:
-        st.info("""
-        📌 **进步分析模式**
-        1. 上传参数配置文件
-        2. 上传第一次成绩
-        3. 上传第二次成绩
-        4. 查看进步得分和对比
-        5. 下载生成的报告
-        """)
+    st.info("""
+    📌 **操作流程**
+    1. 上传参数配置文件
+    2. 连续上传多次成绩文件
+    3. 确认文件列表无误
+    4. 点击「开始分析」
+    5. 查看分析结果和图表
+    6. 需要重新分析时点击「重置」
+    """)
 
-# 检查文件是否上传
-if config_file is None:
+# 检查文件是否上传和是否开始分析
+if st.session_state.config_file_content is None:
     st.info("👈 请在侧边栏上传参数配置文件")
     st.stop()
 
-if upload_mode == "单次分析（仅查看最新成绩）":
-    if score_file is None:
-        st.info("👈 请在侧边栏上传成绩文件")
-        st.stop()
-else:
-    if first_score_file is None or score_file is None:
-        st.info("👈 请在侧边栏上传第一次和第二次成绩文件")
-        st.stop()
+if len(st.session_state.score_files) == 0:
+    st.info("👈 请在侧边栏上传至少一个成绩文件")
+    st.stop()
+
+if not st.session_state.analysis_started:
+    st.info("👈 文件已上传，请点击「开始分析」按钮")
+    st.markdown(f"### 📊 已准备分析 {len(st.session_state.score_files)} 次考试成绩")
+    for idx, file_info in enumerate(st.session_state.score_files):
+        st.write(f"**第 {idx + 1} 次**: {file_info['name']}")
+    st.stop()
 
 # 处理上传的文件
 try:
     # 保存配置文件
     with open("参数配置_temp.xlsx", "wb") as f:
-        f.write(config_file.getbuffer())
+        f.write(st.session_state.config_file_content)
     
     # 读取配置
     config = read_config("参数配置_temp.xlsx")
@@ -150,131 +175,69 @@ try:
     # 定义科目
     subjects = ["语文", "数学", "英语", "物理", "化学", "生物"]
     
-    if upload_mode == "单次分析（仅查看最新成绩）":
-        # 单次分析模式 - 只处理一个成绩文件
-        with open("最新成绩_temp.xlsx", "wb") as f:
-            f.write(score_file.getbuffer())
-        df_new = pd.read_excel("最新成绩_temp.xlsx")
-        df_history = None
-        has_progress = False
+    # 处理所有成绩文件
+    all_dfs = []
+    for idx, file_info in enumerate(st.session_state.score_files):
+        # 保存临时文件
+        temp_filename = f"成绩_第{idx + 1}次_temp.xlsx"
+        with open(temp_filename, "wb") as f:
+            f.write(file_info['content'])
         
-    else:
-        # 进步分析模式 - 处理两个成绩文件
-        with open("最新成绩_第1次_temp.xlsx", "wb") as f:
-            f.write(first_score_file.getbuffer())
-        with open("最新成绩_temp.xlsx", "wb") as f:
-            f.write(score_file.getbuffer())
-        
-        # 读取第一次成绩作为历史数据
-        df_first = pd.read_excel("最新成绩_第1次_temp.xlsx")
-        df_new = pd.read_excel("最新成绩_temp.xlsx")
-        has_progress = True
+        # 读取成绩
+        df = pd.read_excel(temp_filename)
+        all_dfs.append(df)
     
-    # 检查数据格式 - 以第二次成绩(或单次成绩)为准
-    col_count = df_new.shape[1]
+    # 检查第一个文件的格式
+    first_df = all_dfs[0]
+    col_count = first_df.shape[1]
     
     if col_count == 2:
-        df_new.columns = ["姓名", "本次排名"]
         has_score = False
         has_subjects = False
     elif col_count == 3:
-        df_new.columns = ["姓名", "本次排名", "本次总分"]
         has_score = True
         has_subjects = False
     elif col_count == 9:
-        df_new.columns = ["姓名", "本次排名", "本次总分"] + subjects
         has_score = True
         has_subjects = True
     else:
         st.error(f"❌ 数据格式错误！当前列数：{col_count}\n\n支持格式：\n- 2列（姓名、排名）\n- 3列（姓名、排名、总分）\n- 9列（姓名、排名、总分、6科成绩）")
         st.stop()
     
-    # 构建历史数据表
-    if upload_mode == "单次分析（仅查看最新成绩）":
-        # 单次分析：没有历史数据，只有当前成绩
-        if has_subjects:
-            rename_dict = {"本次排名": "排名_第1次", "本次总分": "总分_第1次"}
-            for subj in subjects:
-                rename_dict[subj] = f"{subj}_第1次"
-            df_all = df_new.rename(columns=rename_dict)
-        elif has_score:
-            df_all = df_new.rename(columns={"本次排名": "排名_第1次", "本次总分": "总分_第1次"})
-        else:
-            df_all = df_new.rename(columns={"本次排名": "排名_第1次"})
-    
-    else:
-        # 进步分析：处理第一次和第二次成绩
-        # 检查第一次成绩格式
-        col_count_first = df_first.shape[1]
-        if col_count_first != col_count:
-            st.error(f"❌ 两次成绩的格式不一致！\n第一次：{col_count_first}列\n第二次：{col_count}列\n\n请确保两次成绩使用相同格式")
+    # 检查所有文件格式是否一致
+    for idx, df in enumerate(all_dfs):
+        if df.shape[1] != col_count:
+            st.error(f"❌ 第 {idx + 1} 次成绩格式不一致！\n第1次：{col_count}列\n第{idx + 1}次：{df.shape[1]}列\n\n请确保所有成绩使用相同格式")
             st.stop()
+    
+    # 统一列名并重命名
+    df_all = None
+    for idx, df in enumerate(all_dfs):
+        exam_num = idx + 1
         
-        # 统一第一次成绩的列名
+        # 设置基础列名
         if col_count == 2:
-            df_first.columns = ["姓名", "本次排名"]
+            df.columns = ["姓名", "本次排名"]
         elif col_count == 3:
-            df_first.columns = ["姓名", "本次排名", "本次总分"]
+            df.columns = ["姓名", "本次排名", "本次总分"]
         elif col_count == 9:
-            df_first.columns = ["姓名", "本次排名", "本次总分"] + subjects
+            df.columns = ["姓名", "本次排名", "本次总分"] + subjects
         
-        # 重命名第一次成绩
-        if has_subjects:
-            rename_dict_1 = {"本次排名": "排名_第1次", "本次总分": "总分_第1次"}
-            for subj in subjects:
-                rename_dict_1[subj] = f"{subj}_第1次"
-            df_first_renamed = df_first.rename(columns=rename_dict_1)
-        elif has_score:
-            df_first_renamed = df_first.rename(columns={"本次排名": "排名_第1次", "本次总分": "总分_第1次"})
-        else:
-            df_first_renamed = df_first.rename(columns={"本次排名": "排名_第1次"})
-        
-        # 重命名第二次成绩
-        if has_subjects:
-            rename_dict_2 = {"本次排名": "排名_第2次", "本次总分": "总分_第2次"}
-            for subj in subjects:
-                rename_dict_2[subj] = f"{subj}_第2次"
-            df_new_renamed = df_new.rename(columns=rename_dict_2)
-        elif has_score:
-            df_new_renamed = df_new.rename(columns={"本次排名": "排名_第2次", "本次总分": "总分_第2次"})
-        else:
-            df_new_renamed = df_new.rename(columns={"本次排名": "排名_第2次"})
-        
-        # 合并两次成绩
-        df_all = pd.merge(df_first_renamed, df_new_renamed, on="姓名", how="outer").fillna(0)
-    
-    # 读取或创建历史数据
-    if history_file:
-        df_all = pd.read_excel("成绩总表_temp.xlsx")
-    else:
-        df_all = pd.DataFrame()
-    
-    # 处理历史数据
-    if df_all.empty:
-        if has_subjects:
-            rename_dict = {"本次排名": "排名_第1次", "本次总分": "总分_第1次"}
-            for subj in subjects:
-                rename_dict[subj] = f"{subj}_第1次"
-            df_all = df_new.rename(columns=rename_dict)
-        elif has_score:
-            df_all = df_new.rename(columns={"本次排名": "排名_第1次", "本次总分": "总分_第1次"})
-        else:
-            df_all = df_new.rename(columns={"本次排名": "排名_第1次"})
-    else:
-        rank_cols = [col for col in df_all.columns if col.startswith("排名_")]
-        next_num = len(rank_cols) + 1
-        
-        rename_dict = {"本次排名": f"排名_第{next_num}次"}
-        
+        # 重命名为第N次
+        rename_dict = {"本次排名": f"排名_第{exam_num}次"}
         if has_score:
-            rename_dict["本次总分"] = f"总分_第{next_num}次"
-        
+            rename_dict["本次总分"] = f"总分_第{exam_num}次"
         if has_subjects:
             for subj in subjects:
-                rename_dict[subj] = f"{subj}_第{next_num}次"
+                rename_dict[subj] = f"{subj}_第{exam_num}次"
         
-        df_new_renamed = df_new.rename(columns=rename_dict)
-        df_all = pd.merge(df_all, df_new_renamed, on="姓名", how="outer").fillna(0)
+        df_renamed = df.rename(columns=rename_dict)
+        
+        # 合并数据
+        if df_all is None:
+            df_all = df_renamed
+        else:
+            df_all = pd.merge(df_all, df_renamed, on="姓名", how="outer").fillna(0)
     
     # 分析得分
     results = []
@@ -434,7 +397,7 @@ with tab1:
             st.metric("偏科检测", "需要科目成绩")
     
     with col4:
-        if upload_mode == "进步分析（对比两次成绩）" and len(rank_cols) >= 2:
+        if len(rank_cols) >= 2:
             progress_count = len(df_score[df_score["区间进步得分"] > 0])
             st.metric("进步人数", progress_count)
         else:
@@ -491,10 +454,8 @@ with tab1:
 with tab2:
     st.header("📈 进步分析")
     
-    if upload_mode == "单次分析（仅查看最新成绩）":
-        st.info("💡 **提示**：当前为单次分析模式，无法查看进步情况。\n\n如需进行进步分析，请切换到「进步分析」模式并上传两次成绩文件。")
-    elif len(rank_cols) < 2:
-        st.warning("⚠️ 需要至少2次考试数据才能分析进步情况")
+    if len(rank_cols) < 2:
+        st.info("💡 **提示**：当前只有 1 次考试数据，无法查看进步情况。\n\n请上传更多成绩文件后点击「重置」重新分析。")
     else:
         # 进步趋势图
         st.subheader("📉 排名趋势（选择学生）")
