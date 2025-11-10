@@ -40,11 +40,19 @@ def read_config(path="参数配置.xlsx"):
             threshold = int(re.findall(r"\d+", k)[0])
             score_bonus[threshold] = v
 
+    # 偏科扣分参数
+    bias_penalty = {
+        "轻微偏科": cfg.get("轻微偏科扣分", 10),
+        "明显偏科": cfg.get("明显偏科扣分", 30),
+        "严重偏科": cfg.get("严重偏科扣分", 60)
+    }
+
     return {
         "weights": weights,
         "rank_bonus": rank_bonus,
         "chain_bonus": chain_bonus,
         "score_bonus": score_bonus,
+        "bias_penalty": bias_penalty,
         "line": int(cfg.get("line", 430)),
         "bonus_line": cfg.get("过线奖励", 0)
     }
@@ -163,6 +171,25 @@ def detect_subject_bias(row, subjects):
         "科目详情": subject_scores
     }
 
+# === 偏科扣分 ===
+def bias_penalty_score(bias_level, config):
+    """
+    根据偏科等级计算扣分
+    
+    参数:
+        bias_level: 偏科等级（均衡发展/轻微偏科/明显偏科/严重偏科）
+        config: 配置参数
+    
+    返回:
+        float: 扣分值（负数）
+    """
+    if bias_level == "均衡发展" or bias_level == "数据不足":
+        return 0
+    
+    penalty = config["bias_penalty"].get(bias_level, 0)
+    return -penalty  # 返回负数表示扣分
+
+
 
 # === 主流程 ===
 def main():
@@ -241,6 +268,16 @@ def main():
     rank_cols = [col for col in df_all.columns if col.startswith("排名_")]
     score_cols = [col for col in df_all.columns if col.startswith("总分_")]
     
+    # 如果有科目成绩，需要计算偏科扣分
+    bias_dict = {}  # 存储每个学生的偏科信息
+    if has_subjects:
+        # 获取最新一次的科目成绩列
+        subject_cols_dict = {}
+        for subj in subjects:
+            subj_cols = [col for col in df_all.columns if col.startswith(f"{subj}_")]
+            if subj_cols:
+                subject_cols_dict[subj] = subj_cols[-1]  # 取最新一次
+    
     for _, row in df_all.iterrows():
         name = row["姓名"]
         ranks = [row[col] for col in rank_cols]
@@ -278,16 +315,39 @@ def main():
             latest_total_score = row[score_cols[-1]]
             score_add = total_score_bonus(latest_total_score, config)
         
-        # 总得分
-        total = chain_progress + rank_add + chain_add + score_add
+        # 偏科扣分
+        bias_deduct = 0
+        bias_level = "均衡发展"
+        if has_subjects:
+            # 提取最新一次的各科成绩
+            latest_scores = {"姓名": name}
+            for subj, col in subject_cols_dict.items():
+                latest_scores[subj] = row[col]
+            
+            # 检测偏科
+            bias_info = detect_subject_bias(latest_scores, subjects)
+            bias_level = bias_info["偏科等级"]
+            bias_deduct = bias_penalty_score(bias_level, config)
+            
+            # 保存偏科信息供后续使用
+            bias_dict[name] = bias_info
+        
+        # 总得分（包含偏科扣分）
+        total = chain_progress + rank_add + chain_add + score_add + bias_deduct
 
-        if score_cols:
+        if has_subjects:
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, score_add, bias_deduct, total])
+        elif score_cols:
             results.append([name, chain_len, chain_progress, chain_add, rank_add, score_add, total])
         else:
             results.append([name, chain_len, chain_progress, chain_add, rank_add, total])
 
-    # 根据是否有总分列，生成不同的DataFrame
-    if score_cols:
+    # 根据是否有总分列和科目列，生成不同的DataFrame
+    if has_subjects:
+        df_score = pd.DataFrame(results, columns=[
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "总分奖励", "偏科扣分", "总得分"
+        ])
+    elif score_cols:
         df_score = pd.DataFrame(results, columns=[
             "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "总分奖励", "总得分"
         ])
@@ -308,23 +368,10 @@ def main():
         print("\n📊 正在进行偏科检测...")
         bias_results = []
         
-        # 获取最新一次的科目成绩列
-        subject_cols_dict = {}
-        for subj in subjects:
-            subj_cols = [col for col in df_all.columns if col.startswith(f"{subj}_")]
-            if subj_cols:
-                subject_cols_dict[subj] = subj_cols[-1]  # 取最新一次
-        
-        for _, row in df_all.iterrows():
-            name = row["姓名"]
-            
-            # 提取最新一次的各科成绩
-            latest_scores = {"姓名": name}
-            for subj, col in subject_cols_dict.items():
-                latest_scores[subj] = row[col]
-            
-            # 检测偏科
-            bias_info = detect_subject_bias(latest_scores, subjects)
+        # 使用之前计算好的偏科信息
+        for name, bias_info in bias_dict.items():
+            # 计算该学生的扣分
+            penalty = bias_penalty_score(bias_info["偏科等级"], config)
             
             bias_results.append({
                 "姓名": name,
@@ -332,7 +379,8 @@ def main():
                 "偏科等级": bias_info["偏科等级"],
                 "平均标准化分": bias_info["平均标准化分"],
                 "最强科目": bias_info["最强科目"],
-                "最弱科目": bias_info["最弱科目"]
+                "最弱科目": bias_info["最弱科目"],
+                "扣分": penalty
             })
         
         df_bias = pd.DataFrame(bias_results)
@@ -345,6 +393,13 @@ def main():
         print("\n📈 偏科情况统计:")
         for level, count in bias_stats.items():
             print(f"   {level}: {count}人")
+        
+        # 统计扣分情况
+        total_penalty = df_bias[df_bias["扣分"] < 0]["扣分"].sum()
+        penalty_count = len(df_bias[df_bias["扣分"] < 0])
+        if penalty_count > 0:
+            print(f"\n⚠️  偏科扣分统计:")
+            print(f"   共{penalty_count}人被扣分，累计扣除{abs(total_penalty):.1f}分")
 
     input("\n按回车退出...")
 
