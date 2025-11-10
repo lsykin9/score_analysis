@@ -6,18 +6,18 @@ import re
 # === 读取配置 ===
 def read_config(path="参数配置.xlsx"):
     df = pd.read_excel(path)
-    cfg = df.set_index("区间")["参数"].to_dict()
+    cfg = df.set_index("参数")["数值"].to_dict()
 
     # 提取区间权重
     weights = [
-        (1, 20, cfg.get("A_前20", 4.0)),
-        (21, 50, cfg.get("B_21-50", 3.5)),
-        (51, 100, cfg.get("C_51-100", 3.0)),
-        (101, 150, cfg.get("D_101-150", 2.5)),
-        (151, 200, cfg.get("E_151-200", 2.0)),
-        (201, 300, cfg.get("F_201-300", 1.5)),
-        (301, int(cfg.get("line", 430)), cfg.get("G_301-线", 1.0)),
-        (int(cfg.get("line", 430)) + 1, float("inf"), cfg.get("H_线下", 0.8))
+        (1, 20, cfg.get("排名前20", 4.0)),
+        (21, 50, cfg.get("排名21-50", 3.5)),
+        (51, 100, cfg.get("排名51-100", 3.0)),
+        (101, 150, cfg.get("排名101-150", 2.5)),
+        (151, 200, cfg.get("排名151-200", 2.0)),
+        (201, 300, cfg.get("排名201-300", 1.5)),
+        (301, int(cfg.get("线（排名）", 430)), cfg.get("排名301-线", 1.0)),
+        (int(cfg.get("线（排名）", 430)) + 1, float("inf"), cfg.get("排名线下", 0.8))
     ]
     # 排名加分（自动识别“前N奖励”）
     rank_bonus = {
@@ -53,7 +53,7 @@ def read_config(path="参数配置.xlsx"):
         "chain_bonus": chain_bonus,
         "score_bonus": score_bonus,
         "bias_penalty": bias_penalty,
-        "line": int(cfg.get("line", 430)),
+        "line": int(cfg.get("线（排名）", 430)),
         "bonus_line": cfg.get("过线奖励", 0)
     }
 
