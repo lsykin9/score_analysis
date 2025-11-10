@@ -67,6 +67,10 @@ if 'analysis_started' not in st.session_state:
     st.session_state.analysis_started = False
 if 'config_file_content' not in st.session_state:
     st.session_state.config_file_content = None
+if 'history_file_content' not in st.session_state:
+    st.session_state.history_file_content = None
+if 'history_exam_count' not in st.session_state:
+    st.session_state.history_exam_count = 0
 
 # 侧边栏 - 文件上传
 with st.sidebar:
@@ -88,9 +92,48 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("📚 上传成绩文件")
     
+    # 历史成绩总表上传（可选）
+    history_file = st.file_uploader(
+        "2️⃣ 上传历史成绩总表（可选）",
+        type=['xlsx'],
+        help="如果已有历史数据，可以上传成绩总表.xlsx，新成绩将接续在后面",
+        key="history_uploader"
+    )
+    
+    # 保存历史文件到 session state 并分析次数
+    if history_file is not None and not st.session_state.analysis_started:
+        st.session_state.history_file_content = history_file.getvalue()
+        # 分析历史文件有多少次考试
+        try:
+            import io
+            df_history = pd.read_excel(io.BytesIO(history_file.getvalue()))
+            rank_cols = [col for col in df_history.columns if col.startswith("排名_")]
+            st.session_state.history_exam_count = len(rank_cols)
+            st.success(f"✅ 历史总表已上传 (包含 {st.session_state.history_exam_count} 次考试)")
+        except Exception as e:
+            st.error(f"❌ 历史文件读取失败: {str(e)}")
+            st.session_state.history_file_content = None
+            st.session_state.history_exam_count = 0
+    
+    # 计算当前应该是第几次
+    if st.session_state.history_exam_count > 0:
+        next_exam_num = st.session_state.history_exam_count + len(st.session_state.score_files) + 1
+        upload_label = f"3️⃣ 上传第 {next_exam_num} 次成绩（接续历史总表）"
+    else:
+        next_exam_num = len(st.session_state.score_files) + 1
+        upload_label = f"3️⃣ 上传第 {next_exam_num} 次成绩"
+    
+    # 计算当前应该是第几次
+    if st.session_state.history_exam_count > 0:
+        next_exam_num = st.session_state.history_exam_count + len(st.session_state.score_files) + 1
+        upload_label = f"3️⃣ 上传第 {next_exam_num} 次成绩（接续历史总表）"
+    else:
+        next_exam_num = len(st.session_state.score_files) + 1
+        upload_label = f"3️⃣ 上传第 {next_exam_num} 次成绩"
+    
     # 成绩文件上传 - 支持多次上传
     score_file = st.file_uploader(
-        "2️⃣ 上传成绩文件（可多次上传）",
+        upload_label,
         type=['xlsx'],
         help="上传学生成绩Excel文件，可以连续上传多次考试成绩",
         key=f"score_uploader_{len(st.session_state.score_files)}"
@@ -103,17 +146,24 @@ with st.sidebar:
         if score_file.name not in file_names:
             st.session_state.score_files.append({
                 'name': score_file.name,
-                'content': score_file.getvalue()
+                'content': score_file.getvalue(),
+                'exam_num': next_exam_num
             })
             st.rerun()
     
     # 显示已上传的文件列表
-    if st.session_state.score_files:
-        st.markdown("### 📋 已上传的成绩文件")
+    if st.session_state.history_exam_count > 0 or st.session_state.score_files:
+        st.markdown("### 📋 考试成绩列表")
+        
+        # 显示历史总表信息
+        if st.session_state.history_exam_count > 0:
+            st.info(f"📦 历史总表: 第 1-{st.session_state.history_exam_count} 次")
+        
+        # 显示新上传的文件
         for idx, file_info in enumerate(st.session_state.score_files):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.text(f"{idx + 1}. {file_info['name']}")
+                st.text(f"📄 第 {file_info['exam_num']} 次: {file_info['name']}")
             with col2:
                 if st.button("🗑️", key=f"delete_{idx}", disabled=st.session_state.analysis_started):
                     st.session_state.score_files.pop(idx)
@@ -133,6 +183,8 @@ with st.sidebar:
             st.session_state.score_files = []
             st.session_state.analysis_started = False
             st.session_state.config_file_content = None
+            st.session_state.history_file_content = None
+            st.session_state.history_exam_count = 0
             st.rerun()
     
     st.markdown("---")
@@ -140,11 +192,17 @@ with st.sidebar:
     st.info("""
     📌 **操作流程**
     1. 上传参数配置文件
-    2. 连续上传多次成绩文件
-    3. 确认文件列表无误
-    4. 点击「开始分析」
-    5. 查看分析结果和图表
-    6. 需要重新分析时点击「重置」
+    2. (可选) 上传历史成绩总表
+    3. 连续上传新的成绩文件
+    4. 确认文件列表和顺序无误
+    5. 点击「开始分析」
+    6. 查看分析结果和图表
+    7. 需要重新分析时点击「重置」
+    
+    💡 **提示**
+    - 如果上传了历史总表，新成绩将接续在后面
+    - 文件顺序会自动标记（第N次）
+    - 可以随时删除已上传的文件重新上传
     """)
 
 # 检查文件是否上传和是否开始分析
@@ -152,15 +210,23 @@ if st.session_state.config_file_content is None:
     st.info("👈 请在侧边栏上传参数配置文件")
     st.stop()
 
-if len(st.session_state.score_files) == 0:
-    st.info("👈 请在侧边栏上传至少一个成绩文件")
+if len(st.session_state.score_files) == 0 and st.session_state.history_file_content is None:
+    st.info("👈 请在侧边栏上传至少一个成绩文件或历史总表")
     st.stop()
 
 if not st.session_state.analysis_started:
     st.info("👈 文件已上传，请点击「开始分析」按钮")
-    st.markdown(f"### 📊 已准备分析 {len(st.session_state.score_files)} 次考试成绩")
+    
+    if st.session_state.history_exam_count > 0:
+        st.markdown(f"### 📊 已准备分析")
+        st.write(f"- 📦 历史总表: 包含第 1-{st.session_state.history_exam_count} 次考试")
+        st.write(f"- 📄 新增成绩: {len(st.session_state.score_files)} 次")
+        st.write(f"- 📈 总计: {st.session_state.history_exam_count + len(st.session_state.score_files)} 次考试")
+    else:
+        st.markdown(f"### 📊 已准备分析 {len(st.session_state.score_files)} 次考试成绩")
+    
     for idx, file_info in enumerate(st.session_state.score_files):
-        st.write(f"**第 {idx + 1} 次**: {file_info['name']}")
+        st.write(f"**第 {file_info['exam_num']} 次**: {file_info['name']}")
     st.stop()
 
 # 处理上传的文件
@@ -175,47 +241,74 @@ try:
     # 定义科目
     subjects = ["语文", "数学", "英语", "物理", "化学", "生物"]
     
-    # 处理所有成绩文件
+    # 处理历史总表（如果有）
+    df_all = None
+    if st.session_state.history_file_content is not None:
+        with open("成绩总表_temp.xlsx", "wb") as f:
+            f.write(st.session_state.history_file_content)
+        df_all = pd.read_excel("成绩总表_temp.xlsx")
+        
+        # 检查历史总表的格式
+        rank_cols_history = [col for col in df_all.columns if col.startswith("排名_")]
+        score_cols_history = [col for col in df_all.columns if col.startswith("总分_")]
+        
+        # 推断格式
+        if len(score_cols_history) > 0:
+            # 检查是否有科目列
+            subject_cols_check = [col for col in df_all.columns if any(col.startswith(f"{subj}_") for subj in subjects)]
+            if len(subject_cols_check) > 0:
+                has_subjects = True
+                has_score = True
+            else:
+                has_subjects = False
+                has_score = True
+        else:
+            has_subjects = False
+            has_score = False
+    
+    # 处理新上传的成绩文件
     all_dfs = []
     for idx, file_info in enumerate(st.session_state.score_files):
         # 保存临时文件
-        temp_filename = f"成绩_第{idx + 1}次_temp.xlsx"
+        temp_filename = f"成绩_第{file_info['exam_num']}次_temp.xlsx"
         with open(temp_filename, "wb") as f:
             f.write(file_info['content'])
         
         # 读取成绩
         df = pd.read_excel(temp_filename)
-        all_dfs.append(df)
+        all_dfs.append((file_info['exam_num'], df))
     
-    # 检查第一个文件的格式
-    first_df = all_dfs[0]
-    col_count = first_df.shape[1]
-    
-    if col_count == 2:
-        has_score = False
-        has_subjects = False
-    elif col_count == 3:
-        has_score = True
-        has_subjects = False
-    elif col_count == 9:
-        has_score = True
-        has_subjects = True
-    else:
-        st.error(f"❌ 数据格式错误！当前列数：{col_count}\n\n支持格式：\n- 2列（姓名、排名）\n- 3列（姓名、排名、总分）\n- 9列（姓名、排名、总分、6科成绩）")
-        st.stop()
-    
-    # 检查所有文件格式是否一致
-    for idx, df in enumerate(all_dfs):
-        if df.shape[1] != col_count:
-            st.error(f"❌ 第 {idx + 1} 次成绩格式不一致！\n第1次：{col_count}列\n第{idx + 1}次：{df.shape[1]}列\n\n请确保所有成绩使用相同格式")
+    # 如果没有历史总表,需要从新文件推断格式
+    if df_all is None and len(all_dfs) > 0:
+        # 检查第一个文件的格式
+        first_df = all_dfs[0][1]
+        col_count = first_df.shape[1]
+        
+        if col_count == 2:
+            has_score = False
+            has_subjects = False
+        elif col_count == 3:
+            has_score = True
+            has_subjects = False
+        elif col_count == 9:
+            has_score = True
+            has_subjects = True
+        else:
+            st.error(f"❌ 数据格式错误！当前列数：{col_count}\n\n支持格式：\n- 2列（姓名、排名）\n- 3列（姓名、排名、总分）\n- 9列（姓名、排名、总分、6科成绩）")
             st.stop()
     
-    # 统一列名并重命名
-    df_all = None
-    for idx, df in enumerate(all_dfs):
-        exam_num = idx + 1
-        
+    # 检查所有新文件格式是否一致
+    if len(all_dfs) > 0:
+        expected_col_count = all_dfs[0][1].shape[1]
+        for exam_num, df in all_dfs:
+            if df.shape[1] != expected_col_count:
+                st.error(f"❌ 第 {exam_num} 次成绩格式不一致！\n第1次新增：{expected_col_count}列\n第{exam_num}次：{df.shape[1]}列\n\n请确保所有成绩使用相同格式")
+                st.stop()
+    
+    # 合并新上传的成绩到历史总表
+    for exam_num, df in all_dfs:
         # 设置基础列名
+        col_count = df.shape[1]
         if col_count == 2:
             df.columns = ["姓名", "本次排名"]
         elif col_count == 3:
