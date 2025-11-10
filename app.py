@@ -147,7 +147,8 @@ with st.sidebar:
             st.session_state.score_files.append({
                 'name': score_file.name,
                 'content': score_file.getvalue(),
-                'exam_num': next_exam_num
+                'exam_num': next_exam_num,
+                'exam_label': f"第{next_exam_num}次考试"  # 默认标签
             })
             st.rerun()
     
@@ -159,12 +160,31 @@ with st.sidebar:
         if st.session_state.history_exam_count > 0:
             st.info(f"📦 历史总表: 第 1-{st.session_state.history_exam_count} 次")
         
-        # 显示新上传的文件
+        # 显示新上传的文件，允许编辑标签
+        if st.session_state.score_files:
+            st.markdown("**📝 新上传的成绩 (可编辑名称)**")
+        
         for idx, file_info in enumerate(st.session_state.score_files):
-            col1, col2 = st.columns([3, 1])
+            col1, col2, col3 = st.columns([2, 2, 1])
+            
             with col1:
-                st.text(f"📄 第 {file_info['exam_num']} 次: {file_info['name']}")
+                # 可编辑的考试名称
+                new_label = st.text_input(
+                    f"考试{idx+1}名称",
+                    value=file_info.get('exam_label', f"第{file_info['exam_num']}次考试"),
+                    key=f"label_{idx}",
+                    disabled=st.session_state.analysis_started,
+                    label_visibility="collapsed",
+                    placeholder="例如: 期中考试、期末考试、月考"
+                )
+                # 更新标签
+                if new_label != file_info.get('exam_label'):
+                    st.session_state.score_files[idx]['exam_label'] = new_label
+            
             with col2:
+                st.caption(f"📄 {file_info['name']}")
+            
+            with col3:
                 if st.button("🗑️", key=f"delete_{idx}", disabled=st.session_state.analysis_started):
                     st.session_state.score_files.pop(idx)
                     st.rerun()
@@ -225,8 +245,10 @@ if not st.session_state.analysis_started:
     else:
         st.markdown(f"### 📊 已准备分析 {len(st.session_state.score_files)} 次考试成绩")
     
+    st.markdown("#### 考试列表:")
     for idx, file_info in enumerate(st.session_state.score_files):
-        st.write(f"**第 {file_info['exam_num']} 次**: {file_info['name']}")
+        exam_label = file_info.get('exam_label', f"第{file_info['exam_num']}次考试")
+        st.write(f"**{exam_label}**: {file_info['name']}")
     st.stop()
 
 # 处理上传的文件
@@ -268,20 +290,26 @@ try:
     
     # 处理新上传的成绩文件
     all_dfs = []
+    exam_labels = {}  # 存储考试编号到标签的映射
+    
     for idx, file_info in enumerate(st.session_state.score_files):
+        exam_num = file_info['exam_num']
+        exam_label = file_info.get('exam_label', f"第{exam_num}次考试")
+        exam_labels[exam_num] = exam_label
+        
         # 保存临时文件
-        temp_filename = f"成绩_第{file_info['exam_num']}次_temp.xlsx"
+        temp_filename = f"成绩_第{exam_num}次_temp.xlsx"
         with open(temp_filename, "wb") as f:
             f.write(file_info['content'])
         
         # 读取成绩
         df = pd.read_excel(temp_filename)
-        all_dfs.append((file_info['exam_num'], df))
+        all_dfs.append((exam_num, exam_label, df))
     
     # 如果没有历史总表,需要从新文件推断格式
     if df_all is None and len(all_dfs) > 0:
         # 检查第一个文件的格式
-        first_df = all_dfs[0][1]
+        first_df = all_dfs[0][2]
         col_count = first_df.shape[1]
         
         if col_count == 2:
@@ -299,14 +327,14 @@ try:
     
     # 检查所有新文件格式是否一致
     if len(all_dfs) > 0:
-        expected_col_count = all_dfs[0][1].shape[1]
-        for exam_num, df in all_dfs:
+        expected_col_count = all_dfs[0][2].shape[1]
+        for exam_num, exam_label, df in all_dfs:
             if df.shape[1] != expected_col_count:
-                st.error(f"❌ 第 {exam_num} 次成绩格式不一致！\n第1次新增：{expected_col_count}列\n第{exam_num}次：{df.shape[1]}列\n\n请确保所有成绩使用相同格式")
+                st.error(f"❌ {exam_label} 成绩格式不一致！\n第1次新增：{expected_col_count}列\n{exam_label}：{df.shape[1]}列\n\n请确保所有成绩使用相同格式")
                 st.stop()
     
     # 合并新上传的成绩到历史总表
-    for exam_num, df in all_dfs:
+    for exam_num, exam_label, df in all_dfs:
         # 设置基础列名
         col_count = df.shape[1]
         if col_count == 2:
@@ -316,21 +344,61 @@ try:
         elif col_count == 9:
             df.columns = ["姓名", "本次排名", "本次总分"] + subjects
         
-        # 重命名为第N次
-        rename_dict = {"本次排名": f"排名_第{exam_num}次"}
+        # 重命名为自定义标签
+        rename_dict = {"本次排名": f"排名_{exam_label}"}
         if has_score:
-            rename_dict["本次总分"] = f"总分_第{exam_num}次"
+            rename_dict["本次总分"] = f"总分_{exam_label}"
         if has_subjects:
             for subj in subjects:
-                rename_dict[subj] = f"{subj}_第{exam_num}次"
+                rename_dict[subj] = f"{subj}_{exam_label}"
         
         df_renamed = df.rename(columns=rename_dict)
         
-        # 合并数据
+        # 合并数据 - 确保只保留"姓名"列作为合并键,避免列名冲突
         if df_all is None:
             df_all = df_renamed
         else:
-            df_all = pd.merge(df_all, df_renamed, on="姓名", how="outer").fillna(0)
+            # 检查是否有重复列名(除了"姓名")
+            existing_cols = set(df_all.columns) - {"姓名"}
+            new_cols = set(df_renamed.columns) - {"姓名"}
+            duplicate_cols = existing_cols & new_cols
+            
+            if duplicate_cols:
+                st.warning(f"⚠️ 警告: 检测到重复列名 {duplicate_cols}，请修改考试名称以避免冲突")
+                # 删除重复列
+                df_renamed = df_renamed[[col for col in df_renamed.columns if col not in duplicate_cols or col == "姓名"]]
+            
+            df_all = pd.merge(df_all, df_renamed, on="姓名", how="outer", suffixes=('', '_重复')).fillna(0)
+            
+            # 删除任何带有"_重复"后缀的列
+            duplicate_cols_after = [col for col in df_all.columns if col.endswith('_重复')]
+            if duplicate_cols_after:
+                df_all = df_all.drop(columns=duplicate_cols_after)
+    
+    # 检查并清理所有带有 _x, _y 等后缀的列名
+    cols_to_rename = {}
+    for col in df_all.columns:
+        if col.endswith('_x') or col.endswith('_y'):
+            # 移除后缀
+            base_col = col.rsplit('_', 1)[0]
+            st.warning(f"⚠️ 检测到异常列名: {col}，已重命名为: {base_col}")
+            cols_to_rename[col] = base_col
+    
+    if cols_to_rename:
+        df_all = df_all.rename(columns=cols_to_rename)
+        # 如果有重复列,保留第一个
+        df_all = df_all.loc[:, ~df_all.columns.duplicated()]
+    
+    # 调试信息:显示最终的列名
+    with st.expander("🔍 查看数据列名（调试用）"):
+        st.write("**所有列名:**")
+        st.write(list(df_all.columns))
+        st.write(f"\n**排名列:** {[col for col in df_all.columns if col.startswith('排名_')]}")
+        st.write(f"**总分列:** {[col for col in df_all.columns if col.startswith('总分_')]}")
+        if has_subjects:
+            for subj in subjects:
+                subj_cols = [col for col in df_all.columns if col.startswith(f"{subj}_")]
+                st.write(f"**{subj}列:** {subj_cols}")
     
     # 分析得分
     results = []
@@ -451,6 +519,7 @@ try:
     st.session_state['score_cols'] = score_cols
     st.session_state['subjects'] = subjects
     st.session_state['bias_dict'] = bias_dict if has_subjects else None
+    st.session_state['exam_labels'] = exam_labels  # 保存考试标签映射
     
     st.success("✅ 数据处理完成！")
     
@@ -562,13 +631,19 @@ with tab2:
         if selected_students:
             fig = go.Figure()
             
+            # 提取考试标签 - 从列名中提取
+            exam_display_names = []
+            for col in rank_cols:
+                # 列名格式: "排名_考试名称"
+                label = col.replace("排名_", "")
+                exam_display_names.append(label)
+            
             for student in selected_students[:5]:
                 student_data = df_all[df_all["姓名"] == student]
                 ranks = [student_data[col].values[0] for col in rank_cols]
-                exam_numbers = [f"第{i+1}次" for i in range(len(ranks))]
                 
                 fig.add_trace(go.Scatter(
-                    x=exam_numbers,
+                    x=exam_display_names,
                     y=ranks,
                     mode='lines+markers',
                     name=student,
@@ -577,7 +652,7 @@ with tab2:
             
             fig.update_layout(
                 title="排名趋势对比（排名越小越好）",
-                xaxis_title="考试次数",
+                xaxis_title="考试",
                 yaxis_title="排名",
                 yaxis_autorange='reversed',
                 hovermode='x unified',
@@ -755,11 +830,16 @@ with tab4:
         if len(rank_cols) >= 2:
             st.subheader("📉 个人排名趋势")
             ranks = [student_history[col] for col in rank_cols]
-            exam_numbers = [f"第{i+1}次" for i in range(len(ranks))]
+            
+            # 提取考试标签
+            exam_display_names = []
+            for col in rank_cols:
+                label = col.replace("排名_", "")
+                exam_display_names.append(label)
             
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                x=exam_numbers,
+                x=exam_display_names,
                 y=ranks,
                 mode='lines+markers+text',
                 text=ranks,
@@ -770,7 +850,7 @@ with tab4:
             fig.update_layout(
                 yaxis_autorange='reversed',
                 yaxis_title="排名",
-                xaxis_title="考试次数",
+                xaxis_title="考试",
                 height=300
             )
             st.plotly_chart(fig, use_container_width=True)
