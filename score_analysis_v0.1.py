@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import os
 import re
 
@@ -89,6 +90,79 @@ def total_score_bonus(total_score, config):
         if total_score > threshold and b > bonus:
             bonus = b
     return bonus
+
+# === 偏科检测（标准差法） ===
+def detect_subject_bias(row, subjects):
+    """
+    检测学生是否偏科
+    使用标准差法：将各科成绩标准化为百分制后计算标准差
+    
+    参数:
+        row: 学生成绩数据行
+        subjects: 科目列表
+    
+    返回:
+        dict: 包含标准差、偏科等级、最强科目、最弱科目等信息
+    """
+    # 定义各科满分
+    full_scores = {
+        "语文": 150, "数学": 150, "英语": 150,
+        "物理": 100, "化学": 100, "生物": 100
+    }
+    
+    # 提取各科成绩并标准化为百分制
+    normalized_scores = []
+    subject_scores = {}
+    
+    for subj in subjects:
+        score = row.get(subj, 0)
+        if score > 0:  # 只处理有效成绩
+            full_score = full_scores.get(subj, 100)
+            normalized = (score / full_score) * 100
+            normalized_scores.append(normalized)
+            subject_scores[subj] = {
+                "原始分": score,
+                "标准化分": round(normalized, 2)
+            }
+    
+    # 如果没有有效成绩，返回空结果
+    if len(normalized_scores) < 2:
+        return {
+            "标准差": 0,
+            "偏科等级": "数据不足",
+            "最强科目": "-",
+            "最弱科目": "-",
+            "平均标准化分": 0,
+            "科目详情": subject_scores
+        }
+    
+    # 计算标准差
+    std_dev = np.std(normalized_scores, ddof=1)  # 使用样本标准差
+    mean_score = np.mean(normalized_scores)
+    
+    # 判定偏科等级
+    if std_dev < 10:
+        bias_level = "均衡发展"
+    elif std_dev < 15:
+        bias_level = "轻微偏科"
+    elif std_dev < 20:
+        bias_level = "明显偏科"
+    else:
+        bias_level = "严重偏科"
+    
+    # 找出最强和最弱科目
+    max_subj = max(subject_scores.items(), key=lambda x: x[1]["标准化分"])
+    min_subj = min(subject_scores.items(), key=lambda x: x[1]["标准化分"])
+    
+    return {
+        "标准差": round(std_dev, 2),
+        "偏科等级": bias_level,
+        "最强科目": f"{max_subj[0]}({max_subj[1]['标准化分']}%)",
+        "最弱科目": f"{min_subj[0]}({min_subj[1]['标准化分']}%)",
+        "平均标准化分": round(mean_score, 2),
+        "科目详情": subject_scores
+    }
+
 
 # === 主流程 ===
 def main():
@@ -229,7 +303,51 @@ def main():
     df_final.to_excel("最终得分结果.xlsx", index=False)
     print("✅ 已生成最终得分结果.xlsx")
 
-    input("按回车退出...")
+    # 偏科检测（仅在有科目成绩时执行）
+    if has_subjects:
+        print("\n📊 正在进行偏科检测...")
+        bias_results = []
+        
+        # 获取最新一次的科目成绩列
+        subject_cols_dict = {}
+        for subj in subjects:
+            subj_cols = [col for col in df_all.columns if col.startswith(f"{subj}_")]
+            if subj_cols:
+                subject_cols_dict[subj] = subj_cols[-1]  # 取最新一次
+        
+        for _, row in df_all.iterrows():
+            name = row["姓名"]
+            
+            # 提取最新一次的各科成绩
+            latest_scores = {"姓名": name}
+            for subj, col in subject_cols_dict.items():
+                latest_scores[subj] = row[col]
+            
+            # 检测偏科
+            bias_info = detect_subject_bias(latest_scores, subjects)
+            
+            bias_results.append({
+                "姓名": name,
+                "标准差": bias_info["标准差"],
+                "偏科等级": bias_info["偏科等级"],
+                "平均标准化分": bias_info["平均标准化分"],
+                "最强科目": bias_info["最强科目"],
+                "最弱科目": bias_info["最弱科目"]
+            })
+        
+        df_bias = pd.DataFrame(bias_results)
+        df_bias = df_bias.sort_values(by="标准差", ascending=False)
+        df_bias.to_excel("偏科检测报告.xlsx", index=False)
+        print("✅ 已生成偏科检测报告.xlsx")
+        
+        # 统计偏科情况
+        bias_stats = df_bias["偏科等级"].value_counts()
+        print("\n📈 偏科情况统计:")
+        for level, count in bias_stats.items():
+            print(f"   {level}: {count}人")
+
+    input("\n按回车退出...")
+
 
 if __name__ == "__main__":
     main()
