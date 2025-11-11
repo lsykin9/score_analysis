@@ -194,7 +194,9 @@ with st.sidebar:
     # 操作按钮
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🚀 开始分析", type="primary", disabled=st.session_state.analysis_started or len(st.session_state.score_files) == 0):
+        # 允许只有历史总表或只有新成绩时都能开始分析
+        can_analyze = (len(st.session_state.score_files) > 0 or st.session_state.history_exam_count > 0)
+        if st.button("🚀 开始分析", type="primary", disabled=st.session_state.analysis_started or not can_analyze):
             st.session_state.analysis_started = True
             st.rerun()
     
@@ -230,6 +232,7 @@ if st.session_state.config_file_content is None:
     st.info("👈 请在侧边栏上传参数配置文件")
     st.stop()
 
+# 检查是否至少有历史总表或新成绩文件
 if len(st.session_state.score_files) == 0 and st.session_state.history_file_content is None:
     st.info("👈 请在侧边栏上传至少一个成绩文件或历史总表")
     st.stop()
@@ -237,18 +240,28 @@ if len(st.session_state.score_files) == 0 and st.session_state.history_file_cont
 if not st.session_state.analysis_started:
     st.info("👈 文件已上传，请点击「开始分析」按钮")
     
-    if st.session_state.history_exam_count > 0:
+    if st.session_state.history_exam_count > 0 and len(st.session_state.score_files) > 0:
+        # 有历史总表 + 新成绩
         st.markdown(f"### 📊 已准备分析")
         st.write(f"- 📦 历史总表: 包含第 1-{st.session_state.history_exam_count} 次考试")
         st.write(f"- 📄 新增成绩: {len(st.session_state.score_files)} 次")
         st.write(f"- 📈 总计: {st.session_state.history_exam_count + len(st.session_state.score_files)} 次考试")
+        st.markdown("#### 新增考试列表:")
+        for idx, file_info in enumerate(st.session_state.score_files):
+            exam_label = file_info.get('exam_label', f"第{file_info['exam_num']}次考试")
+            st.write(f"**{exam_label}**: {file_info['name']}")
+    elif st.session_state.history_exam_count > 0:
+        # 只有历史总表
+        st.markdown(f"### 📊 已准备分析")
+        st.write(f"- 📦 历史总表: 包含第 1-{st.session_state.history_exam_count} 次考试")
+        st.info("💡 当前仅分析历史总表数据，未添加新成绩")
     else:
+        # 只有新成绩
         st.markdown(f"### 📊 已准备分析 {len(st.session_state.score_files)} 次考试成绩")
-    
-    st.markdown("#### 考试列表:")
-    for idx, file_info in enumerate(st.session_state.score_files):
-        exam_label = file_info.get('exam_label', f"第{file_info['exam_num']}次考试")
-        st.write(f"**{exam_label}**: {file_info['name']}")
+        st.markdown("#### 考试列表:")
+        for idx, file_info in enumerate(st.session_state.score_files):
+            exam_label = file_info.get('exam_label', f"第{file_info['exam_num']}次考试")
+            st.write(f"**{exam_label}**: {file_info['name']}")
     st.stop()
 
 # 处理上传的文件
@@ -292,19 +305,20 @@ try:
     all_dfs = []
     exam_labels = {}  # 存储考试编号到标签的映射
     
-    for idx, file_info in enumerate(st.session_state.score_files):
-        exam_num = file_info['exam_num']
-        exam_label = file_info.get('exam_label', f"第{exam_num}次考试")
-        exam_labels[exam_num] = exam_label
-        
-        # 保存临时文件
-        temp_filename = f"成绩_第{exam_num}次_temp.xlsx"
-        with open(temp_filename, "wb") as f:
-            f.write(file_info['content'])
-        
-        # 读取成绩
-        df = pd.read_excel(temp_filename)
-        all_dfs.append((exam_num, exam_label, df))
+    if len(st.session_state.score_files) > 0:
+        for idx, file_info in enumerate(st.session_state.score_files):
+            exam_num = file_info['exam_num']
+            exam_label = file_info.get('exam_label', f"第{exam_num}次考试")
+            exam_labels[exam_num] = exam_label
+            
+            # 保存临时文件
+            temp_filename = f"成绩_第{exam_num}次_temp.xlsx"
+            with open(temp_filename, "wb") as f:
+                f.write(file_info['content'])
+            
+            # 读取成绩
+            df = pd.read_excel(temp_filename)
+            all_dfs.append((exam_num, exam_label, df))
     
     # 如果没有历史总表,需要从新文件推断格式
     if df_all is None and len(all_dfs) > 0:
@@ -324,6 +338,10 @@ try:
         else:
             st.error(f"❌ 数据格式错误！当前列数：{col_count}\n\n支持格式：\n- 2列（姓名、排名）\n- 3列（姓名、排名、总分）\n- 9列（姓名、排名、总分、6科成绩）")
             st.stop()
+    
+    # 如果只有历史总表,没有新文件,跳过后续处理
+    if df_all is not None and len(all_dfs) == 0:
+        st.info("📦 仅分析历史总表数据")
     
     # 检查所有新文件格式是否一致
     if len(all_dfs) > 0:
@@ -389,6 +407,11 @@ try:
         # 如果有重复列,保留第一个
         df_all = df_all.loc[:, ~df_all.columns.duplicated()]
     
+    # 确保至少有一些数据
+    if df_all is None or df_all.empty:
+        st.error("❌ 没有可用的数据进行分析")
+        st.stop()
+    
     # 调试信息:显示最终的列名
     with st.expander("🔍 查看数据列名（调试用）"):
         st.write("**所有列名:**")
@@ -416,7 +439,15 @@ try:
     
     for _, row in df_all.iterrows():
         name = row["姓名"]
-        ranks = [row[col] for col in rank_cols]
+        # 将排名转换为整数,处理浮点数和NaN
+        ranks = []
+        for col in rank_cols:
+            val = row[col]
+            if pd.isna(val) or val == 0:
+                ranks.append(0)
+            else:
+                ranks.append(int(float(val)))
+        
         chain_len = 0
         chain_progress = 0.0
 
@@ -433,13 +464,14 @@ try:
             _cur = ranks[-1]
             _pre = ranks[-2]
             if _cur and _pre and _cur < _pre:
-                chain_progress = progress_score(_pre, _cur, config["weights"])
+                # 确保传入整数
+                chain_progress = progress_score(int(_pre), int(_cur), config["weights"])
             else:
                 chain_progress = 0.0
 
         # 排名加分
-        latest_rank = ranks[-1]
-        previous_rank = ranks[-2] if len(ranks) > 1 else 9999
+        latest_rank = int(ranks[-1]) if ranks[-1] else 0
+        previous_rank = int(ranks[-2]) if len(ranks) > 1 and ranks[-2] else 9999
         rank_add = ranking_bonus(latest_rank, previous_rank, config)
         
         # 连续进步加分
@@ -449,7 +481,11 @@ try:
         score_add = 0
         if score_cols and len(score_cols) > 0:
             latest_total_score = row[score_cols[-1]]
-            score_add = total_score_bonus(latest_total_score, config)
+            # 处理浮点数和NaN
+            if pd.notna(latest_total_score):
+                score_add = total_score_bonus(float(latest_total_score), config)
+            else:
+                score_add = 0
         
         # 偏科扣分
         bias_deduct = 0
@@ -607,8 +643,45 @@ with tab1:
     
     # 详细数据表格
     st.subheader("📋 详细数据")
+    
+    # 格式化数据显示
+    df_display = df_final.copy()
+    
+    # 创建格式化字典
+    format_dict = {}
+    
+    # 1. 将所有排名列和次数列格式化为整数（无小数点）
+    for col in df_display.columns:
+        if col.startswith("排名_"):
+            format_dict[col] = "{:.0f}"
+    
+    # 连续进步次数也格式化为整数
+    if "连续进步次数" in df_display.columns:
+        format_dict["连续进步次数"] = "{:.0f}"
+    
+    # 2. 将所有得分列格式化为一位小数
+    score_columns = ["区间进步得分", "连续进步加分", "排名加分", "总得分"]
+    if "总分奖励" in df_display.columns:
+        score_columns.append("总分奖励")
+    if "偏科扣分" in df_display.columns:
+        score_columns.append("偏科扣分")
+    
+    for col in score_columns:
+        if col in df_display.columns:
+            format_dict[col] = "{:.1f}"
+    
+    # 3. 将总分列格式化为一位小数
+    for col in df_display.columns:
+        if col.startswith("总分_"):
+            format_dict[col] = "{:.1f}"
+        # 4. 将科目成绩列也格式化为一位小数
+        if has_subjects:
+            for subj in subjects:
+                if col.startswith(f"{subj}_"):
+                    format_dict[col] = "{:.1f}"
+    
     st.dataframe(
-        df_final.style.background_gradient(subset=['总得分'], cmap='RdYlGn'),
+        df_display.style.background_gradient(subset=['总得分'], cmap='RdYlGn').format(format_dict),
         use_container_width=True,
         height=400
     )
