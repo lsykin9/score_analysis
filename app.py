@@ -60,41 +60,111 @@ st.markdown("""
 st.title("📊 学生成绩进步评分系统")
 st.markdown("---")
 
-# 初始化 session state 来存储上传的成绩文件
+# 初始化 session state 来存储上传的成绩文件和配置参数
 if 'score_files' not in st.session_state:
     st.session_state.score_files = []
 if 'analysis_started' not in st.session_state:
     st.session_state.analysis_started = False
-if 'config_file_content' not in st.session_state:
-    st.session_state.config_file_content = None
 if 'history_file_content' not in st.session_state:
     st.session_state.history_file_content = None
 if 'history_exam_count' not in st.session_state:
     st.session_state.history_exam_count = 0
 
-# 侧边栏 - 文件上传
+# 初始化默认参数配置
+if 'config_params' not in st.session_state:
+    st.session_state.config_params = {
+        "排名前20": 2.0,
+        "排名21-50": 1.8,
+        "排名51-100": 1.5,
+        "排名101-150": 1.2,
+        "排名151-200": 1.0,
+        "排名201-300": 0.8,
+        "排名301-线": 0.6,
+        "排名线下": 0.5,
+        "线（排名）": 430,
+        "过线奖励": 5,
+        "前10奖励": 30,
+        "前20奖励": 25,
+        "前30奖励": 20,
+        "前50奖励": 15,
+        "前100奖励": 10,
+        "连续进步第1次奖励": 5,
+        "连续进步第2次奖励": 8,
+        "连续进步第3次奖励": 12,
+        "连续进步第4次奖励": 18,
+        "连续进步第5次奖励": 25,
+        "总分大于600奖励": 15,
+        "总分大于650奖励": 20,
+        "总分大于700奖励": 30,
+        "轻微偏科扣分": 5,
+        "明显偏科扣分": 15,
+        "严重偏科扣分": 30
+    }
+
+# 侧边栏 - 参数配置和文件上传
 with st.sidebar:
-    st.header("📁 文件上传")
+    st.header("⚙️ 参数配置")
     
-    # 参数配置文件上传
-    config_file = st.file_uploader(
-        "1️⃣ 上传参数配置文件",
-        type=['xlsx'],
-        help="上传包含评分参数的Excel文件",
-        key="config_uploader"
-    )
-    
-    # 保存配置文件到 session state
-    if config_file is not None:
-        st.session_state.config_file_content = config_file.getvalue()
-        st.success("✅ 配置文件已上传")
+    # 创建可折叠的参数设置区域
+    with st.expander("📊 评分参数设置", expanded=False):
+        st.subheader("区间权重")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.config_params["排名前20"] = st.number_input("排名前20", value=st.session_state.config_params["排名前20"], step=0.1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["排名21-50"] = st.number_input("排名21-50", value=st.session_state.config_params["排名21-50"], step=0.1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["排名51-100"] = st.number_input("排名51-100", value=st.session_state.config_params["排名51-100"], step=0.1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["排名101-150"] = st.number_input("排名101-150", value=st.session_state.config_params["排名101-150"], step=0.1, disabled=st.session_state.analysis_started)
+        with col2:
+            st.session_state.config_params["排名151-200"] = st.number_input("排名151-200", value=st.session_state.config_params["排名151-200"], step=0.1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["排名201-300"] = st.number_input("排名201-300", value=st.session_state.config_params["排名201-300"], step=0.1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["排名301-线"] = st.number_input("排名301-线", value=st.session_state.config_params["排名301-线"], step=0.1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["排名线下"] = st.number_input("排名线下", value=st.session_state.config_params["排名线下"], step=0.1, disabled=st.session_state.analysis_started)
+        
+        st.markdown("---")
+        st.subheader("排名线和过线奖励")
+        st.session_state.config_params["线（排名）"] = st.number_input("线（排名）", value=st.session_state.config_params["线（排名）"], step=1, disabled=st.session_state.analysis_started)
+        st.session_state.config_params["过线奖励"] = st.number_input("过线奖励", value=st.session_state.config_params["过线奖励"], step=1, disabled=st.session_state.analysis_started)
+        
+        st.markdown("---")
+        st.subheader("排名奖励")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.config_params["前10奖励"] = st.number_input("前10奖励", value=st.session_state.config_params["前10奖励"], step=1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["前20奖励"] = st.number_input("前20奖励", value=st.session_state.config_params["前20奖励"], step=1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["前30奖励"] = st.number_input("前30奖励", value=st.session_state.config_params["前30奖励"], step=1, disabled=st.session_state.analysis_started)
+        with col2:
+            st.session_state.config_params["前50奖励"] = st.number_input("前50奖励", value=st.session_state.config_params["前50奖励"], step=1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["前100奖励"] = st.number_input("前100奖励", value=st.session_state.config_params["前100奖励"], step=1, disabled=st.session_state.analysis_started)
+        
+        st.markdown("---")
+        st.subheader("连续进步奖励")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.config_params["连续进步第1次奖励"] = st.number_input("第1次", value=st.session_state.config_params["连续进步第1次奖励"], step=1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["连续进步第2次奖励"] = st.number_input("第2次", value=st.session_state.config_params["连续进步第2次奖励"], step=1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["连续进步第3次奖励"] = st.number_input("第3次", value=st.session_state.config_params["连续进步第3次奖励"], step=1, disabled=st.session_state.analysis_started)
+        with col2:
+            st.session_state.config_params["连续进步第4次奖励"] = st.number_input("第4次", value=st.session_state.config_params["连续进步第4次奖励"], step=1, disabled=st.session_state.analysis_started)
+            st.session_state.config_params["连续进步第5次奖励"] = st.number_input("第5次", value=st.session_state.config_params["连续进步第5次奖励"], step=1, disabled=st.session_state.analysis_started)
+        
+        st.markdown("---")
+        st.subheader("总分奖励")
+        st.session_state.config_params["总分大于600奖励"] = st.number_input("总分>600", value=st.session_state.config_params["总分大于600奖励"], step=1, disabled=st.session_state.analysis_started)
+        st.session_state.config_params["总分大于650奖励"] = st.number_input("总分>650", value=st.session_state.config_params["总分大于650奖励"], step=1, disabled=st.session_state.analysis_started)
+        st.session_state.config_params["总分大于700奖励"] = st.number_input("总分>700", value=st.session_state.config_params["总分大于700奖励"], step=1, disabled=st.session_state.analysis_started)
+        
+        st.markdown("---")
+        st.subheader("偏科扣分")
+        st.session_state.config_params["轻微偏科扣分"] = st.number_input("轻微偏科", value=st.session_state.config_params["轻微偏科扣分"], step=1, disabled=st.session_state.analysis_started)
+        st.session_state.config_params["明显偏科扣分"] = st.number_input("明显偏科", value=st.session_state.config_params["明显偏科扣分"], step=1, disabled=st.session_state.analysis_started)
+        st.session_state.config_params["严重偏科扣分"] = st.number_input("严重偏科", value=st.session_state.config_params["严重偏科扣分"], step=1, disabled=st.session_state.analysis_started)
     
     st.markdown("---")
-    st.subheader("📚 上传成绩文件")
+    st.header("📁 文件上传")
     
     # 历史成绩总表上传（可选）
     history_file = st.file_uploader(
-        "2️⃣ 上传历史成绩总表（可选）",
+        "1️⃣ 上传历史成绩总表（可选）",
         type=['xlsx'],
         help="如果已有历史数据，可以上传成绩总表.xlsx，新成绩将接续在后面",
         key="history_uploader"
@@ -118,18 +188,10 @@ with st.sidebar:
     # 计算当前应该是第几次
     if st.session_state.history_exam_count > 0:
         next_exam_num = st.session_state.history_exam_count + len(st.session_state.score_files) + 1
-        upload_label = f"3️⃣ 上传第 {next_exam_num} 次成绩（接续历史总表）"
+        upload_label = f"2️⃣ 上传第 {next_exam_num} 次成绩（接续历史总表）"
     else:
         next_exam_num = len(st.session_state.score_files) + 1
-        upload_label = f"3️⃣ 上传第 {next_exam_num} 次成绩"
-    
-    # 计算当前应该是第几次
-    if st.session_state.history_exam_count > 0:
-        next_exam_num = st.session_state.history_exam_count + len(st.session_state.score_files) + 1
-        upload_label = f"3️⃣ 上传第 {next_exam_num} 次成绩（接续历史总表）"
-    else:
-        next_exam_num = len(st.session_state.score_files) + 1
-        upload_label = f"3️⃣ 上传第 {next_exam_num} 次成绩"
+        upload_label = f"2️⃣ 上传第 {next_exam_num} 次成绩"
     
     # 成绩文件上传 - 支持多次上传
     score_file = st.file_uploader(
@@ -204,16 +266,16 @@ with st.sidebar:
         if st.button("🔄 重置", disabled=not st.session_state.analysis_started):
             st.session_state.score_files = []
             st.session_state.analysis_started = False
-            st.session_state.config_file_content = None
             st.session_state.history_file_content = None
             st.session_state.history_exam_count = 0
+            # 注意: 不清除 config_params，保留用户的参数设置
             st.rerun()
     
     st.markdown("---")
     st.markdown("### ℹ️ 使用说明")
     st.info("""
     📌 **操作流程**
-    1. 上传参数配置文件
+    1. (可选) 在「评分参数设置」中调整参数
     2. (可选) 上传历史成绩总表
     3. 连续上传新的成绩文件
     4. 确认文件列表和顺序无误
@@ -222,15 +284,11 @@ with st.sidebar:
     7. 需要重新分析时点击「重置」
     
     💡 **提示**
+    - 参数配置可在顶部「评分参数设置」中调整
     - 如果上传了历史总表，新成绩将接续在后面
     - 文件顺序会自动标记（第N次）
     - 可以随时删除已上传的文件重新上传
     """)
-
-# 检查文件是否上传和是否开始分析
-if st.session_state.config_file_content is None:
-    st.info("👈 请在侧边栏上传参数配置文件")
-    st.stop()
 
 # 检查是否至少有历史总表或新成绩文件
 if len(st.session_state.score_files) == 0 and st.session_state.history_file_content is None:
@@ -266,12 +324,62 @@ if not st.session_state.analysis_started:
 
 # 处理上传的文件
 try:
-    # 保存配置文件
-    with open("参数配置_temp.xlsx", "wb") as f:
-        f.write(st.session_state.config_file_content)
+    # 从 session state 构建配置
+    cfg = st.session_state.config_params
     
-    # 读取配置
-    config = read_config("参数配置_temp.xlsx")
+    # 提取区间权重
+    weights = [
+        (1, 20, cfg.get("排名前20", 4.0)),
+        (21, 50, cfg.get("排名21-50", 3.5)),
+        (51, 100, cfg.get("排名51-100", 3.0)),
+        (101, 150, cfg.get("排名101-150", 2.5)),
+        (151, 200, cfg.get("排名151-200", 2.0)),
+        (201, 300, cfg.get("排名201-300", 1.5)),
+        (301, int(cfg.get("线（排名）", 430)), cfg.get("排名301-线", 1.0)),
+        (int(cfg.get("线（排名）", 430)) + 1, float("inf"), cfg.get("排名线下", 0.8))
+    ]
+    
+    # 排名加分
+    rank_bonus = {
+        10: cfg.get("前10奖励", 50),
+        20: cfg.get("前20奖励", 40),
+        30: cfg.get("前30奖励", 30),
+        50: cfg.get("前50奖励", 20),
+        100: cfg.get("前100奖励", 10)
+    }
+    
+    # 连续进步加分
+    chain_bonus = {
+        1: cfg.get("连续进步第1次奖励", 5),
+        2: cfg.get("连续进步第2次奖励", 10),
+        3: cfg.get("连续进步第3次奖励", 20),
+        4: cfg.get("连续进步第4次奖励", 30),
+        5: cfg.get("连续进步第5次奖励", 50)
+    }
+    
+    # 总分奖励阈值
+    score_bonus = {
+        600: cfg.get("总分大于600奖励", 30),
+        650: cfg.get("总分大于650奖励", 40),
+        700: cfg.get("总分大于700奖励", 50)
+    }
+    
+    # 偏科扣分参数
+    bias_penalty = {
+        "轻微偏科": cfg.get("轻微偏科扣分", 10),
+        "明显偏科": cfg.get("明显偏科扣分", 30),
+        "严重偏科": cfg.get("严重偏科扣分", 60)
+    }
+    
+    config = {
+        "weights": weights,
+        "rank_bonus": rank_bonus,
+        "chain_bonus": chain_bonus,
+        "score_bonus": score_bonus,
+        "bias_penalty": bias_penalty,
+        "line": int(cfg.get("线（排名）", 430)),
+        "bonus_line": cfg.get("过线奖励", 0)
+    }
     
     # 定义科目
     subjects = ["语文", "数学", "英语", "物理", "化学", "生物"]
@@ -624,10 +732,17 @@ with tab1:
     fig = px.histogram(
         df_final,
         x="总得分",
-        nbins=20,
+        nbins=30,  # 增加箱子数，让分布更细致连续
         title="",
-        labels={"总得分": "总得分", "count": "人数"},
-        color_discrete_sequence=px.colors.sequential.Sunset  # Seaborn风格的青绿色渐变
+        labels={"总得分": "总得分", "count": "人数"}
+    )
+    
+    # 设置杏色填充和半透明黑色描边
+    fig.update_traces(
+        marker=dict(
+            color='rgba(255, 200, 120, 0.8)',  # 清新杏色 + 80%不透明度
+            line=dict(color='rgba(0, 0, 0, 0.6)', width=0.5)  # 黑色描边 + 60%不透明度
+        )
     )
     
     fig.update_layout(
@@ -690,7 +805,7 @@ with tab2:
         st.info("💡 **提示**：当前只有 1 次考试数据，无法查看进步情况。\n\n请上传更多成绩文件后点击「重置」重新分析。")
     else:
         # 进步趋势图
-        st.subheader("📉 排名趋势（选择学生）")
+        st.subheader("排名趋势（选择学生）")
         
         selected_students = st.multiselect(
             "选择要对比的学生（最多5个）",
@@ -898,7 +1013,7 @@ with tab4:
         
         # 排名趋势
         if len(rank_cols) >= 2:
-            st.subheader("📉 个人排名趋势")
+            st.subheader("个人排名趋势")
             # 将排名转换为整数
             ranks = [int(float(student_history[col])) if pd.notna(student_history[col]) and student_history[col] != 0 else 0 for col in rank_cols]
             
@@ -960,7 +1075,7 @@ with tab4:
         st.markdown("---")
         
         # 得分构成 - 放在下面
-        st.subheader("🥧 得分构成")
+        st.subheader("💯 得分构成")
         
         score_components = {
             "区间进步得分": student_data["区间进步得分"],
