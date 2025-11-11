@@ -19,7 +19,7 @@ def build_windows_exe():
         'pyinstaller',
         '--name=学生成绩分析系统',
         '--onedir',  # 打包成文件夹
-        '--windowed',  # 无控制台窗口
+        '--console',  # 显示控制台窗口（方便调试）
         '--add-data=score_analysis_v0.1.py;.',  # 添加评分模块（Windows用分号）
         '--add-data=score_analysis_v0_1.py;.',  # 添加中转模块
         '--hidden-import=streamlit',
@@ -29,6 +29,7 @@ def build_windows_exe():
         '--hidden-import=openpyxl',
         '--hidden-import=streamlit.runtime.scriptrunner.magic_funcs',
         '--hidden-import=streamlit.components.v1',
+        '--hidden-import=streamlit.web.cli',
         '--collect-all=streamlit',
         '--collect-all=plotly',
         '--exclude-module=torch',
@@ -36,6 +37,7 @@ def build_windows_exe():
         '--exclude-module=matplotlib',
         '--exclude-module=PIL',
         '--noconfirm',
+        '--clean',  # 清理缓存
         'app.py'
     ]
     
