@@ -412,17 +412,6 @@ try:
         st.error("❌ 没有可用的数据进行分析")
         st.stop()
     
-    # 调试信息:显示最终的列名
-    with st.expander("🔍 查看数据列名（调试用）"):
-        st.write("**所有列名:**")
-        st.write(list(df_all.columns))
-        st.write(f"\n**排名列:** {[col for col in df_all.columns if col.startswith('排名_')]}")
-        st.write(f"**总分列:** {[col for col in df_all.columns if col.startswith('总分_')]}")
-        if has_subjects:
-            for subj in subjects:
-                subj_cols = [col for col in df_all.columns if col.startswith(f"{subj}_")]
-                st.write(f"**{subj}列:** {subj_cols}")
-    
     # 分析得分
     results = []
     rank_cols = [col for col in df_all.columns if col.startswith("排名_")]
@@ -604,40 +593,48 @@ with tab1:
     st.markdown("---")
     
     # 得分排行榜
-    col1, col2 = st.columns(2)
+    st.subheader("🏆 总得分 Top 10")
+    top10 = df_final.nlargest(10, "总得分")[["姓名", "总得分"]]
     
-    with col1:
-        st.subheader("🏆 总得分 Top 10")
-        top10 = df_final.nlargest(10, "总得分")[["姓名", "总得分"]]
-        
-        fig = px.bar(
-            top10,
-            x="总得分",
-            y="姓名",
-            orientation='h',
-            text="总得分",
-            color="总得分",
-            color_continuous_scale="Viridis"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig.update_layout(
-            showlegend=False,
-            yaxis={'categoryorder':'total ascending'},
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    fig = px.bar(
+        top10,
+        x="总得分",
+        y="姓名",
+        orientation='h',
+        text="总得分",
+        color="总得分",
+        color_continuous_scale="Sunset",  # 日落色: 紫-粉-橙渐变
+    )
+    fig.update_traces(
+        texttemplate='%{text:.1f}', 
+        textposition='outside',
+        opacity=0.9  # 透明度: 0-1之间，0完全透明，1完全不透明
+    )
+    fig.update_layout(
+        showlegend=False,
+        yaxis={'categoryorder':'total ascending'},
+        height=600,  # 放大高度
+    )
+    st.plotly_chart(fig, use_container_width=True)
     
-    with col2:
-        st.subheader("📊 得分分布")
-        fig = px.histogram(
-            df_final,
-            x="总得分",
-            nbins=20,
-            title="",
-            labels={"总得分": "总得分", "count": "人数"}
-        )
-        fig.update_layout(height=400)
-        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("---")
+    
+    st.subheader("📊 得分分布")
+    
+    fig = px.histogram(
+        df_final,
+        x="总得分",
+        nbins=20,
+        title="",
+        labels={"总得分": "总得分", "count": "人数"},
+        color_discrete_sequence=px.colors.sequential.Sunset  # Seaborn风格的青绿色渐变
+    )
+    
+    fig.update_layout(
+        height=500,  # 放大高度
+        showlegend=False
+    )
+    st.plotly_chart(fig, use_container_width=True)
     
     st.markdown("---")
     
@@ -736,49 +733,25 @@ with tab2:
         st.markdown("---")
         
         # 进步榜单
-        col1, col2 = st.columns(2)
+        st.subheader("⬆️ 进步最大 Top 10")
+        progress_top = df_score.nlargest(10, "区间进步得分")[["姓名", "区间进步得分"]]
         
-        with col1:
-            st.subheader("⬆️ 进步最大 Top 10")
-            progress_top = df_score.nlargest(10, "区间进步得分")[["姓名", "区间进步得分"]]
-            
-            fig = px.bar(
-                progress_top,
-                x="区间进步得分",
-                y="姓名",
-                orientation='h',
-                text="区间进步得分",
-                color="区间进步得分",
-                color_continuous_scale="Greens"
-            )
-            fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-            fig.update_layout(
-                showlegend=False,
-                yaxis={'categoryorder':'total ascending'},
-                height=400
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.subheader("🔥 连续进步奖励")
-            continuous_progress = df_score[df_score["连续进步次数"] > 0]
-            
-            if len(continuous_progress) > 0:
-                fig = px.scatter(
-                    continuous_progress,
-                    x="连续进步次数",
-                    y="连续进步加分",
-                    size="连续进步加分",
-                    hover_data=["姓名"],
-                    text="姓名",
-                    color="连续进步加分",
-                    color_continuous_scale="Reds"
-                )
-                fig.update_traces(textposition='top center')
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("暂无连续进步的学生")
+        fig = px.bar(
+            progress_top,
+            x="区间进步得分",
+            y="姓名",
+            orientation='h',
+            text="区间进步得分",
+            color="区间进步得分",
+            color_continuous_scale="Greens"
+        )
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        fig.update_layout(
+            showlegend=False,
+            yaxis={'categoryorder':'total ascending'},
+            height=500
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 with tab3:
     st.header("🎯 偏科检测")
@@ -856,8 +829,32 @@ with tab3:
         problem_students = df_bias[df_bias["偏科等级"] != "均衡发展"].copy()
         
         if len(problem_students) > 0:
+            # 格式化最强科目和最弱科目中的百分比为一位小数
+            def format_subject_with_percent(text):
+                if pd.isna(text):
+                    return text
+                text = str(text)
+                # 查找百分比模式: 数字后跟%
+                import re
+                def replace_percent(match):
+                    number = float(match.group(1))
+                    return f"{number:.1f}%"
+                # 匹配数字+%的模式
+                text = re.sub(r'(\d+\.?\d*)%', replace_percent, text)
+                return text
+            
+            problem_students['最强科目'] = problem_students['最强科目'].apply(format_subject_with_percent)
+            problem_students['最弱科目'] = problem_students['最弱科目'].apply(format_subject_with_percent)
+            
+            # 格式化数值列
+            bias_format_dict = {
+                "标准差": "{:.2f}",
+                "平均标准化分": "{:.2f}",
+                "扣分": "{:.1f}"  # 扣分保持一位小数
+            }
+            
             st.dataframe(
-                problem_students.style.background_gradient(subset=['标准差'], cmap='Reds'),
+                problem_students.style.background_gradient(subset=['标准差'], cmap='Reds').format(bias_format_dict),
                 use_container_width=True,
                 height=300
             )
@@ -902,7 +899,8 @@ with tab4:
         # 排名趋势
         if len(rank_cols) >= 2:
             st.subheader("📉 个人排名趋势")
-            ranks = [student_history[col] for col in rank_cols]
+            # 将排名转换为整数
+            ranks = [int(float(student_history[col])) if pd.notna(student_history[col]) and student_history[col] != 0 else 0 for col in rank_cols]
             
             # 提取考试标签
             exam_display_names = []
@@ -915,7 +913,7 @@ with tab4:
                 x=exam_display_names,
                 y=ranks,
                 mode='lines+markers+text',
-                text=ranks,
+                text=ranks,  # 现在已经是整数了
                 textposition='top center',
                 line=dict(width=3),
                 marker=dict(size=12)
@@ -928,67 +926,65 @@ with tab4:
             )
             st.plotly_chart(fig, use_container_width=True)
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # 得分构成
-            st.subheader("🥧 得分构成")
+        # 各科成绩雷达图 - 放在上面
+        if has_subjects:
+            st.subheader("🎯 各科成绩分布")
             
-            score_components = {
-                "区间进步得分": student_data["区间进步得分"],
-                "排名加分": student_data["排名加分"],
-                "连续进步加分": student_data["连续进步加分"]
-            }
+            bias_info = bias_dict[student_name]
+            subject_details = bias_info["科目详情"]
             
-            if "总分奖励" in student_data:
-                score_components["总分奖励"] = student_data["总分奖励"]
+            categories = list(subject_details.keys())
+            values = [subject_details[subj]["标准化分"] for subj in categories]
             
-            if "偏科扣分" in student_data:
-                score_components["偏科扣分"] = student_data["偏科扣分"]
-            
-            # 只显示非零项
-            score_components = {k: v for k, v in score_components.items() if v != 0}
-            
-            fig = go.Figure(data=[go.Pie(
-                labels=list(score_components.keys()),
-                values=[abs(v) for v in score_components.values()],
-                hole=0.3,
-                marker_colors=['#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#e74c3c']
-            )])
-            fig.update_layout(height=300)
+            fig = go.Figure()
+            fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=categories,
+                fill='toself',
+                name=student_name
+            ))
+            fig.update_layout(
+                polar=dict(
+                    radialaxis=dict(
+                        visible=True,
+                        range=[0, 100]
+                    )
+                ),
+                showlegend=False,
+                height=500  # 放大高度
+            )
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("需要科目成绩数据才能显示雷达图")
         
-        with col2:
-            # 各科成绩雷达图
-            if has_subjects:
-                st.subheader("🎯 各科成绩分布")
-                
-                bias_info = bias_dict[student_name]
-                subject_details = bias_info["科目详情"]
-                
-                categories = list(subject_details.keys())
-                values = [subject_details[subj]["标准化分"] for subj in categories]
-                
-                fig = go.Figure()
-                fig.add_trace(go.Scatterpolar(
-                    r=values,
-                    theta=categories,
-                    fill='toself',
-                    name=student_name
-                ))
-                fig.update_layout(
-                    polar=dict(
-                        radialaxis=dict(
-                            visible=True,
-                            range=[0, 100]
-                        )
-                    ),
-                    showlegend=False,
-                    height=300
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("需要科目成绩数据才能显示雷达图")
+        st.markdown("---")
+        
+        # 得分构成 - 放在下面
+        st.subheader("🥧 得分构成")
+        
+        score_components = {
+            "区间进步得分": student_data["区间进步得分"],
+            "排名加分": student_data["排名加分"],
+            "连续进步加分": student_data["连续进步加分"]
+        }
+        
+        if "总分奖励" in student_data:
+            score_components["总分奖励"] = student_data["总分奖励"]
+        
+        if "偏科扣分" in student_data:
+            score_components["偏科扣分"] = student_data["偏科扣分"]
+        
+        # 只显示非零项
+        score_components = {k: v for k, v in score_components.items() if v != 0}
+        
+        fig = go.Figure(data=[go.Pie(
+            labels=list(score_components.keys()),
+            values=[abs(v) for v in score_components.values()],
+            hole=0.3,
+            marker_colors=['#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#e74c3c']
+        )])
+        fig.update_layout(height=500)  # 放大高度
+        st.plotly_chart(fig, use_container_width=True)
 
 with tab5:
     st.header("💾 导出结果")
