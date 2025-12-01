@@ -8,8 +8,9 @@ import io
 import time
 
 
+@st.fragment
 def _render_param_settings():
-    """渲染参数设置区域"""
+    """渲染参数设置区域（使用fragment避免刷新主页面）"""
     # 初始化expander状态
     if 'param_expander_expanded' not in st.session_state:
         st.session_state.param_expander_expanded = False
@@ -117,9 +118,9 @@ def _render_interval_settings():
                     for key in keys_to_delete:
                         del st.session_state[key]
                     st.session_state.param_expander_expanded = True
-                    time.sleep(0.05)  # 微延迟减少闪烁感
+                    time.sleep(0.15)  # 延迟配合CSS过渡动画
                     st.session_state._operation_lock = False
-                    st.rerun()
+                    st.rerun(scope="fragment")
     
     # 添加新区间按钮
     if not st.session_state.analysis_started:
@@ -149,9 +150,9 @@ def _render_interval_settings():
                     "weight": 1.0
                 })
                 st.session_state.param_expander_expanded = True
-                time.sleep(0.05)  # 微延迟减少闪烁感
+                time.sleep(0.15)  # 延迟配合CSS过渡动画
                 st.session_state._operation_lock = False
-                st.rerun()
+                st.rerun(scope="fragment")
 
 
 def _render_line_and_bonus_settings():
@@ -201,9 +202,9 @@ def _render_rank_bonus_settings():
                     for key in keys_to_delete:
                         del st.session_state[key]
                     st.session_state.param_expander_expanded = True
-                    time.sleep(0.05)  # 微延迟减少闪烁感
+                    time.sleep(0.15)  # 延迟配合CSS过渡动画
                     st.session_state._operation_lock = False
-                    st.rerun()
+                    st.rerun(scope="fragment")
     
     # 添加新排名奖励按钮
     if not st.session_state.analysis_started:
@@ -226,9 +227,9 @@ def _render_rank_bonus_settings():
                     "bonus": 5
                 })
                 st.session_state.param_expander_expanded = True
-                time.sleep(0.05)  # 微延迟减少闪烁感
+                time.sleep(0.15)  # 延迟配合CSS过渡动画
                 st.session_state._operation_lock = False
-                st.rerun()
+                st.rerun(scope="fragment")
 
 
 def _render_chain_bonus_settings():

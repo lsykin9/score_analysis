@@ -65,6 +65,75 @@ st.markdown("""
         padding: 1rem 2rem;
         font-size: 1.1rem;
     }
+    
+    /* 平滑过渡动画 */
+    .element-container {
+        animation: fadeIn 0.3s ease-in;
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    /* 输入框和按钮的过渡效果 */
+    .stNumberInput, .stButton, .stMarkdown {
+        transition: all 0.2s ease-in-out;
+    }
+    
+    /* 删除按钮悬停效果 */
+    button[kind="secondary"] {
+        transition: all 0.2s ease-in-out;
+    }
+    
+    button[kind="secondary"]:hover {
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    
+    /* 添加按钮悬停效果 */
+    button[kind="primary"] {
+        transition: all 0.2s ease-in-out;
+    }
+    
+    button[kind="primary"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    /* 区间卡片动画 */
+    .stMarkdown h3, .stMarkdown h4 {
+        animation: slideIn 0.3s ease-out;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    /* 数字输入框焦点效果 */
+    .stNumberInput input:focus {
+        border-color: #ff4b4b;
+        box-shadow: 0 0 0 0.2rem rgba(255, 75, 75, 0.25);
+        transition: all 0.2s ease-in-out;
+    }
+    
+    /* Expander展开/收起动画优化 */
+    .streamlit-expanderContent {
+        transition: max-height 0.3s ease-in-out, opacity 0.2s ease-in-out;
+    }
     </style>
 """, unsafe_allow_html=True)
 
