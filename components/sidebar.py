@@ -22,6 +22,7 @@ def _render_param_settings():
         _render_interval_settings()
         _render_line_and_bonus_settings()
         _render_rank_bonus_settings()
+        _render_group_rank_bonus_settings()
         _render_chain_bonus_settings()
         _render_score_bonus_settings()
         _render_bias_penalty_settings()
@@ -73,6 +74,19 @@ def _save_bonus_values():
             st.session_state.rank_bonuses[idx]["threshold"] = st.session_state[thresh_key]
         if val_key in st.session_state:
             st.session_state.rank_bonuses[idx]["bonus"] = st.session_state[val_key]
+
+
+def _save_group_bonus_values():
+    """从session_state的临时key中保存集团排名奖励值到group_rank_bonuses"""
+    for idx, bonus in enumerate(st.session_state.group_rank_bonuses):
+        bonus_id = bonus["id"]
+        thresh_key = f"group_bonus_thresh_{bonus_id}"
+        val_key = f"group_bonus_val_{bonus_id}"
+        
+        if thresh_key in st.session_state:
+            st.session_state.group_rank_bonuses[idx]["threshold"] = st.session_state[thresh_key]
+        if val_key in st.session_state:
+            st.session_state.group_rank_bonuses[idx]["bonus"] = st.session_state[val_key]
 
 
 def _render_interval_settings():
@@ -205,11 +219,11 @@ def _render_line_and_bonus_settings():
 
 
 def _render_rank_bonus_settings():
-    """渲染排名奖励设置"""
+    """渲染年级排名奖励设置"""
     st.markdown("---")
-    st.subheader("排名奖励")
+    st.subheader("年级排名奖励")
     
-    # 显示当前所有排名奖励
+    # 显示当前所有年级排名奖励
     for idx, bonus in enumerate(st.session_state.rank_bonuses):
         bonus_id = bonus["id"]
         # 奖励标题
@@ -251,7 +265,7 @@ def _render_rank_bonus_settings():
     # 添加新排名奖励按钮
     if not st.session_state.analysis_started:
         st.markdown("")
-        if st.button("➕ 添加排名奖励", key="add_bonus", use_container_width=True, type="primary"):
+        if st.button("➕ 添加年级排名奖励", key="add_bonus", use_container_width=True, type="primary"):
             # 操作锁避免重复
             if not st.session_state.get('_operation_lock', False):
                 st.session_state._operation_lock = True
@@ -267,6 +281,77 @@ def _render_rank_bonus_settings():
                 st.session_state.rank_bonuses.append({
                     "id": new_id,
                     "threshold": last_threshold + 10,
+                    "bonus": 5
+                })
+                st.session_state.param_expander_expanded = True
+                time.sleep(0.15)  # 延迟配合CSS过渡动画
+                st.session_state._operation_lock = False
+                st.rerun(scope="fragment")
+
+
+def _render_group_rank_bonus_settings():
+    """渲染集团排名奖励设置"""
+    st.markdown("---")
+    st.subheader("集团排名奖励")
+    
+    # 显示当前所有集团排名奖励
+    for idx, bonus in enumerate(st.session_state.group_rank_bonuses):
+        bonus_id = bonus["id"]
+        # 奖励标题
+        st.markdown(f"**奖励档位 {idx + 1}**: `前 {bonus['threshold']} 名 → {bonus['bonus']} 分`")
+        
+        col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
+        
+        with col1:
+            st.number_input("前N名", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"group_bonus_thresh_{bonus_id}")
+        
+        with col2:
+            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"group_bonus_val_{bonus_id}")
+        
+        with col3:
+            # 使用label占位实现对齐
+            st.markdown("###### 　")  # 透明占位符
+            # 删除按钮(保留至少1个奖励)
+            if st.button("🗑️", key=f"del_group_bonus_{bonus_id}", disabled=st.session_state.analysis_started or len(st.session_state.group_rank_bonuses) <= 1, use_container_width=True, type="secondary"):
+                # 操作锁避免重复
+                if not st.session_state.get('_operation_lock', False):
+                    st.session_state._operation_lock = True
+                    _save_group_bonus_values()  # 先保存其他奖励的值
+                    # 立即删除
+                    st.session_state.group_rank_bonuses = [
+                        b for b in st.session_state.group_rank_bonuses if b["id"] != bonus_id
+                    ]
+                    # 清理废弃的key
+                    keys_to_delete = [k for k in st.session_state.keys() 
+                                     if k.startswith(f"group_bonus_thresh_{bonus_id}") or 
+                                        k.startswith(f"group_bonus_val_{bonus_id}") or 
+                                        k.startswith(f"del_group_bonus_{bonus_id}")]
+                    for key in keys_to_delete:
+                        del st.session_state[key]
+                    st.session_state.param_expander_expanded = True
+                    time.sleep(0.15)  # 延迟配合CSS过渡动画
+                    st.session_state._operation_lock = False
+                    st.rerun(scope="fragment")
+    
+    # 添加新集团排名奖励按钮
+    if not st.session_state.analysis_started:
+        st.markdown("")
+        if st.button("➕ 添加集团排名奖励", key="add_group_bonus", use_container_width=True, type="primary"):
+            # 操作锁避免重复
+            if not st.session_state.get('_operation_lock', False):
+                st.session_state._operation_lock = True
+                # 先保存当前所有输入框的值
+                _save_group_bonus_values()
+                
+                # 默认新奖励阈值为最后一个+50
+                last_threshold = st.session_state.group_rank_bonuses[-1]["threshold"] if st.session_state.group_rank_bonuses else 0
+                
+                new_id = st.session_state.next_group_bonus_id
+                st.session_state.next_group_bonus_id += 1
+                
+                st.session_state.group_rank_bonuses.append({
+                    "id": new_id,
+                    "threshold": last_threshold + 50,
                     "bonus": 5
                 })
                 st.session_state.param_expander_expanded = True

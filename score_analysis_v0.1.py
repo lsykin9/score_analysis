@@ -119,6 +119,22 @@ def ranking_bonus(now, before, config):
     
     return bonus
 
+# === 集团排名奖励加分 ===
+def group_ranking_bonus(group_rank, config):
+    """根据集团排名计算奖励"""
+    if group_rank == 0 or pd.isna(group_rank):
+        return 0
+    if "group_rank_bonus" not in config:
+        return 0
+    
+    min_threshold = float("inf")
+    bonus = 0
+    for threshold, b in config["group_rank_bonus"].items():
+        if group_rank <= threshold and threshold < min_threshold:
+            min_threshold = threshold
+            bonus = b
+    return bonus
+
 # === 连续进步加分（基于进步次数） ===
 def chain_bonus_score(chain_length, config):
     return sum([config["chain_bonus"].get(i, 0) for i in range(1, chain_length + 1)])

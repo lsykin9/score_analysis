@@ -8,6 +8,7 @@ import io
 from score_analysis_v0_1 import (
     progress_score,
     ranking_bonus,
+    group_ranking_bonus,
     chain_bonus_score,
     total_score_bonus,
     detect_subject_bias,
@@ -31,7 +32,7 @@ def _save_all_input_values():
         if weight_key in st.session_state:
             st.session_state.rank_intervals[idx]["weight"] = st.session_state[weight_key]
     
-    # 保存奖励值
+    # 保存年级排名奖励值
     for idx, bonus in enumerate(st.session_state.rank_bonuses):
         bonus_id = bonus["id"]
         thresh_key = f"bonus_thresh_{bonus_id}"
@@ -41,6 +42,17 @@ def _save_all_input_values():
             st.session_state.rank_bonuses[idx]["threshold"] = st.session_state[thresh_key]
         if val_key in st.session_state:
             st.session_state.rank_bonuses[idx]["bonus"] = st.session_state[val_key]
+    
+    # 保存集团排名奖励值
+    for idx, bonus in enumerate(st.session_state.group_rank_bonuses):
+        bonus_id = bonus["id"]
+        thresh_key = f"group_bonus_thresh_{bonus_id}"
+        val_key = f"group_bonus_val_{bonus_id}"
+        
+        if thresh_key in st.session_state:
+            st.session_state.group_rank_bonuses[idx]["threshold"] = st.session_state[thresh_key]
+        if val_key in st.session_state:
+            st.session_state.group_rank_bonuses[idx]["bonus"] = st.session_state[val_key]
 
 
 def process_data():
@@ -64,6 +76,9 @@ def process_data():
     
     # 从动态排名奖励构建rank_bonus
     rank_bonus = {item["threshold"]: item["bonus"] for item in st.session_state.rank_bonuses}
+    
+    # 从动态集团排名奖励构建group_rank_bonus
+    group_rank_bonus = {item["threshold"]: item["bonus"] for item in st.session_state.group_rank_bonuses}
     
     # 连续进步加分
     chain_bonus = {
@@ -91,6 +106,7 @@ def process_data():
     config = {
         "weights": weights,
         "rank_bonus": rank_bonus,
+        "group_rank_bonus": group_rank_bonus,
         "chain_bonus": chain_bonus,
         "score_bonus": score_bonus,
         "bias_penalty": bias_penalty,
@@ -157,6 +173,11 @@ def process_data():
         first_df = all_dfs[0][2]
         col_count = first_df.shape[1]
         
+        # 新格式：姓名 + 总分(3列) + 6科(每科3列) = 1 + 3 + 18 = 22列
+        # 旧格式：
+        # - 2列（姓名、排名）
+        # - 3列（姓名、排名、总分）
+        # - 9列（姓名、排名、总分、6科成绩）
         if col_count == 2:
             has_score = False
             has_subjects = False
@@ -166,8 +187,12 @@ def process_data():
         elif col_count == 9:
             has_score = True
             has_subjects = True
+        elif col_count == 22:
+            # 新格式：包含分数、年级排名、集团排名
+            has_score = True
+            has_subjects = True
         else:
-            st.error(f"❌ 数据格式错误！当前列数：{col_count}\\n\\n支持格式：\\n- 2列（姓名、排名）\\n- 3列（姓名、排名、总分）\\n- 9列（姓名、排名、总分、6科成绩）")
+            st.error(f"❌ 数据格式错误！当前列数：{col_count}\\n\\n支持格式：\\n- 2列（姓名、排名）\\n- 3列（姓名、排名、总分）\\n- 9列（姓名、排名、总分、6科成绩）\\n- 22列（姓名、总分+年级排名+集团排名、6科各3列）")
             st.stop()
     
     # 检查所有新文件格式是否一致
@@ -188,11 +213,30 @@ def process_data():
             df.columns = ["姓名", "本次排名", "本次总分"]
         elif col_count == 9:
             df.columns = ["姓名", "本次排名", "本次总分"] + subjects
+        elif col_count == 22:
+            # 新格式：姓名 + 总分(分数、年级排名、集团排名) + 6科(每科3列)
+            new_cols = ["姓名", "本次总分", "本次年级排名", "本次集团排名"]
+            for subj in subjects:
+                new_cols.extend([f"{subj}_分数", f"{subj}_年级排名", f"{subj}_集团排名"])
+            df.columns = new_cols
         
         # 重命名为自定义标签
-        rename_dict = {"本次排名": f"排名_{exam_label}"}
-        if has_score:
-            rename_dict["本次总分"] = f"总分_{exam_label}"
+        if col_count == 22:
+            # 新格式重命名
+            rename_dict = {
+                "本次年级排名": f"年级排名_{exam_label}",
+                "本次集团排名": f"集团排名_{exam_label}",
+                "本次总分": f"总分_{exam_label}"
+            }
+            for subj in subjects:
+                rename_dict[f"{subj}_分数"] = f"{subj}_{exam_label}"
+                rename_dict[f"{subj}_年级排名"] = f"{subj}_年级排名_{exam_label}"
+                rename_dict[f"{subj}_集团排名"] = f"{subj}_集团排名_{exam_label}"
+        else:
+            # 旧格式重命名
+            rename_dict = {"本次排名": f"排名_{exam_label}"}
+            if has_score:
+                rename_dict["本次总分"] = f"总分_{exam_label}"
         if has_subjects:
             for subj in subjects:
                 rename_dict[subj] = f"{subj}_{exam_label}"
@@ -238,7 +282,8 @@ def process_data():
     
     # 分析得分
     results = []
-    rank_cols = [col for col in df_all.columns if col.startswith("排名_")]
+    rank_cols = [col for col in df_all.columns if col.startswith("排名_") or col.startswith("年级排名_")]
+    group_rank_cols = [col for col in df_all.columns if col.startswith("集团排名_")]
     score_cols = [col for col in df_all.columns if col.startswith("总分_")]
     
     # 如果有科目成绩，需要计算偏科扣分
@@ -246,9 +291,10 @@ def process_data():
     if has_subjects:
         subject_cols_dict = {}
         for subj in subjects:
-            subj_cols = [col for col in df_all.columns if col.startswith(f"{subj}_")]
-            if subj_cols:
-                subject_cols_dict[subj] = subj_cols[-1]
+            # 优先使用带"分数"的列，如果没有则使用旧格式
+            subj_score_cols = [col for col in df_all.columns if col.startswith(f"{subj}_") and not ("年级排名" in col or "集团排名" in col)]
+            if subj_score_cols:
+                subject_cols_dict[subj] = subj_score_cols[-1]
     
     for _, row in df_all.iterrows():
         name = row["姓名"]
@@ -281,10 +327,17 @@ def process_data():
             else:
                 chain_progress = 0.0
 
-        # 排名加分
+        # 排名加分（年级排名）
         latest_rank = int(ranks[-1]) if ranks[-1] else 0
         previous_rank = int(ranks[-2]) if len(ranks) > 1 and ranks[-2] else 9999
         rank_add = ranking_bonus(latest_rank, previous_rank, config)
+        
+        # 集团排名加分
+        group_rank_add = 0
+        if group_rank_cols and len(group_rank_cols) > 0:
+            latest_group_rank = row[group_rank_cols[-1]]
+            if pd.notna(latest_group_rank) and latest_group_rank > 0:
+                group_rank_add = group_ranking_bonus(int(latest_group_rank), config)
         
         # 连续进步加分
         chain_add = chain_bonus_score(chain_len, config)
@@ -313,27 +366,27 @@ def process_data():
             bias_dict[name] = bias_info
         
         # 总得分
-        total = chain_progress + rank_add + chain_add + score_add + bias_deduct
+        total = chain_progress + rank_add + group_rank_add + chain_add + score_add + bias_deduct
 
         if has_subjects:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, score_add, bias_deduct, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, score_add, bias_deduct, total])
         elif score_cols:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, score_add, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, score_add, total])
         else:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, total])
 
     # 生成结果DataFrame
     if has_subjects:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "总分奖励", "偏科扣分", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总分奖励", "偏科扣分", "总得分"
         ])
     elif score_cols:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "总分奖励", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总分奖励", "总得分"
         ])
     else:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总得分"
         ])
     
     df_final = pd.merge(df_all, df_score, on="姓名")

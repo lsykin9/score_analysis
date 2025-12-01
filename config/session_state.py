@@ -29,6 +29,8 @@ def initialize_session_state():
         st.session_state.next_interval_id = 0
     if 'next_bonus_id' not in st.session_state:
         st.session_state.next_bonus_id = 0
+    if 'next_group_bonus_id' not in st.session_state:
+        st.session_state.next_group_bonus_id = 0
 
     # 动态区间权重列表
     if 'rank_intervals' not in st.session_state:
@@ -44,7 +46,7 @@ def initialize_session_state():
         ]
         st.session_state.next_interval_id = 8
 
-    # 动态排名奖励列表
+    # 动态年级排名奖励列表
     if 'rank_bonuses' not in st.session_state:
         st.session_state.rank_bonuses = [
             {"id": 0, "threshold": 10, "bonus": 30},
@@ -54,6 +56,16 @@ def initialize_session_state():
             {"id": 4, "threshold": 100, "bonus": 10}
         ]
         st.session_state.next_bonus_id = 5
+
+    # 动态集团排名奖励列表
+    if 'group_rank_bonuses' not in st.session_state:
+        st.session_state.group_rank_bonuses = [
+            {"id": 0, "threshold": 50, "bonus": 20},
+            {"id": 1, "threshold": 100, "bonus": 15},
+            {"id": 2, "threshold": 200, "bonus": 10},
+            {"id": 3, "threshold": 300, "bonus": 5}
+        ]
+        st.session_state.next_group_bonus_id = 4
 
     # 默认参数配置
     if 'config_params' not in st.session_state:
