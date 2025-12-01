@@ -58,8 +58,10 @@ def initialize_session_state():
     # 默认参数配置
     if 'config_params' not in st.session_state:
         st.session_state.config_params = {
-            "线（排名）": 430,
-            "过线奖励": 5,
+            "A线（排名）": 430,
+            "A线过线奖励": 5,
+            "B线（排名）": 500,
+            "B线过线奖励": 3,
             "连续进步第1次奖励": 5,
             "连续进步第2次奖励": 8,
             "连续进步第3次奖励": 12,

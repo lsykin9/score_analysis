@@ -162,8 +162,46 @@ def _render_line_and_bonus_settings():
     """渲染排名线和过线奖励设置"""
     st.markdown("---")
     st.subheader("排名线和过线奖励")
-    st.session_state.config_params["线（排名）"] = st.number_input("线（排名）", value=st.session_state.config_params["线（排名）"], step=1, disabled=st.session_state.analysis_started)
-    st.session_state.config_params["过线奖励"] = st.number_input("过线奖励", value=st.session_state.config_params["过线奖励"], step=1, disabled=st.session_state.analysis_started)
+    
+    # A线设置
+    st.markdown("**A线**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.session_state.config_params["A线（排名）"] = st.number_input(
+            "A线排名", 
+            value=st.session_state.config_params.get("A线（排名）", st.session_state.config_params.get("线（排名）", 430)), 
+            step=1, 
+            min_value=1,
+            disabled=st.session_state.analysis_started
+        )
+    with col2:
+        st.session_state.config_params["A线过线奖励"] = st.number_input(
+            "A线过线奖励", 
+            value=st.session_state.config_params.get("A线过线奖励", st.session_state.config_params.get("过线奖励", 5)), 
+            step=1, 
+            min_value=0,
+            disabled=st.session_state.analysis_started
+        )
+    
+    # B线设置
+    st.markdown("**B线**")
+    col3, col4 = st.columns(2)
+    with col3:
+        st.session_state.config_params["B线（排名）"] = st.number_input(
+            "B线排名", 
+            value=st.session_state.config_params.get("B线（排名）", 500), 
+            step=1, 
+            min_value=1,
+            disabled=st.session_state.analysis_started
+        )
+    with col4:
+        st.session_state.config_params["B线过线奖励"] = st.number_input(
+            "B线过线奖励", 
+            value=st.session_state.config_params.get("B线过线奖励", 3), 
+            step=1, 
+            min_value=0,
+            disabled=st.session_state.analysis_started
+        )
 
 
 def _render_rank_bonus_settings():

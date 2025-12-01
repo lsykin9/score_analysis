@@ -102,10 +102,21 @@ def ranking_bonus(now, before, config):
         if now <= threshold and threshold < min_threshold:
             min_threshold = threshold
             bonus = b
-    # 过线奖励（独立加分项）
-    if "line" in config and "bonus_line" in config:
+    
+    # AB线过线奖励（只加一个，取奖励更高的）
+    line_bonus = 0
+    if "line_a" in config and "bonus_line_a" in config and "line_b" in config and "bonus_line_b" in config:
+        # 新版本：同时有A线和B线
+        if now <= config["line_a"]:
+            line_bonus = max(line_bonus, config["bonus_line_a"])
+        if now <= config["line_b"]:
+            line_bonus = max(line_bonus, config["bonus_line_b"])
+        bonus += line_bonus
+    elif "line" in config and "bonus_line" in config:
+        # 兼容旧版本单线配置
         if now <= config["line"]:
             bonus += config["bonus_line"]
+    
     return bonus
 
 # === 连续进步加分（基于进步次数） ===

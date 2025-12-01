@@ -94,8 +94,11 @@ def process_data():
         "chain_bonus": chain_bonus,
         "score_bonus": score_bonus,
         "bias_penalty": bias_penalty,
-        "line": int(cfg.get("线（排名）", 430)),
-        "bonus_line": cfg.get("过线奖励", 5)
+        # 支持A线和B线
+        "line_a": int(cfg.get("A线（排名）", cfg.get("线（排名）", 430))),
+        "bonus_line_a": cfg.get("A线过线奖励", cfg.get("过线奖励", 5)),
+        "line_b": int(cfg.get("B线（排名）", 500)),
+        "bonus_line_b": cfg.get("B线过线奖励", 3)
     }
     
     # 定义科目
