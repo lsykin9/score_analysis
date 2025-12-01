@@ -151,18 +151,105 @@ def total_score_bonus(total_score, config):
             bonus = b
     return bonus
 
-# === 偏科检测（标准差法） ===
-def detect_subject_bias(row, subjects):
+# === 偏科检测（基于排名的混合法） ===
+def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
     """
     检测学生是否偏科
-    使用标准差法：将各科成绩标准化为百分制后计算标准差
+    使用排名混合判定法：综合考虑标准差、最大差距和相对离散度
     
     参数:
-        row: 学生成绩数据行
+        row: 学生成绩数据行（包含各科分数）
         subjects: 科目列表
+        subject_ranks: 各科排名字典 {科目: 排名}
+        config: 配置参数（包含偏科判定阈值）
     
     返回:
-        dict: 包含标准差、偏科等级、最强科目、最弱科目等信息
+        dict: 包含偏科等级、最强科目、最弱科目等信息
+    """
+    # 如果没有提供排名数据，回退到旧的分数判定法
+    if subject_ranks is None or len(subject_ranks) == 0:
+        return _detect_subject_bias_by_score(row, subjects)
+    
+    # 提取各科排名
+    ranks = []
+    rank_dict = {}
+    
+    for subj in subjects:
+        if subj in subject_ranks and subject_ranks[subj] is not None:
+            rank = subject_ranks[subj]
+            if pd.notna(rank) and rank > 0:
+                ranks.append(rank)
+                rank_dict[subj] = rank
+    
+    # 如果没有足够的排名数据，返回空结果
+    if len(ranks) < 2:
+        return {
+            "偏科等级": "数据不足",
+            "最强科目": "-",
+            "最弱科目": "-",
+            "排名标准差": 0,
+            "最大排名差": 0,
+            "相对离散度": 0,
+            "平均排名": 0
+        }
+    
+    # 计算统计指标
+    ranks_array = np.array(ranks)
+    mean_rank = np.mean(ranks_array)
+    std_rank = np.std(ranks_array, ddof=1) if len(ranks) > 1 else 0
+    max_rank = np.max(ranks_array)
+    min_rank = np.min(ranks_array)
+    max_diff = max_rank - min_rank
+    relative_dispersion = (max_diff / mean_rank * 100) if mean_rank > 0 else 0
+    
+    # 找到最强和最弱科目
+    best_subject = min(rank_dict, key=rank_dict.get) if rank_dict else "-"
+    worst_subject = max(rank_dict, key=rank_dict.get) if rank_dict else "-"
+    
+    # 判定偏科等级（使用配置的阈值）
+    bias_level = "均衡发展"
+    
+    if config:
+        # 严重偏科：标准差 > 阈值 AND 最大差距 > 阈值 OR 相对离散度 > 阈值
+        severe_std = config.get("严重偏科_标准差", 60)
+        severe_diff = config.get("严重偏科_最大差距", 200)
+        severe_rel = config.get("严重偏科_相对离散度", 300)
+        
+        if (std_rank > severe_std and max_diff > severe_diff) or relative_dispersion > severe_rel:
+            bias_level = "严重偏科"
+        else:
+            # 明显偏科
+            obvious_std = config.get("明显偏科_标准差", 30)
+            obvious_diff = config.get("明显偏科_最大差距", 100)
+            obvious_rel = config.get("明显偏科_相对离散度", 150)
+            
+            if (std_rank > obvious_std and max_diff > obvious_diff) or relative_dispersion > obvious_rel:
+                bias_level = "明显偏科"
+            else:
+                # 轻微偏科
+                mild_std = config.get("轻微偏科_标准差", 15)
+                mild_diff = config.get("轻微偏科_最大差距", 50)
+                mild_rel = config.get("轻微偏科_相对离散度", 80)
+                
+                if std_rank > mild_std or max_diff > mild_diff or relative_dispersion > mild_rel:
+                    bias_level = "轻微偏科"
+    
+    return {
+        "偏科等级": bias_level,
+        "最强科目": best_subject,
+        "最弱科目": worst_subject,
+        "排名标准差": round(std_rank, 2),
+        "最大排名差": int(max_diff),
+        "相对离散度": round(relative_dispersion, 2),
+        "平均排名": round(mean_rank, 2),
+        "各科排名": rank_dict
+    }
+
+
+# === 旧的基于分数的偏科检测（备用） ===
+def _detect_subject_bias_by_score(row, subjects):
+    """
+    基于分数的偏科检测（旧方法，作为备用）
     """
     # 定义各科满分
     full_scores = {
@@ -188,19 +275,16 @@ def detect_subject_bias(row, subjects):
     # 如果没有有效成绩，返回空结果
     if len(normalized_scores) < 2:
         return {
-            "标准差": 0,
             "偏科等级": "数据不足",
             "最强科目": "-",
-            "最弱科目": "-",
-            "平均标准化分": 0,
-            "科目详情": subject_scores
+            "最弱科目": "-"
         }
     
     # 计算标准差
     std_dev = np.std(normalized_scores, ddof=1)  # 使用样本标准差
     mean_score = np.mean(normalized_scores)
     
-    # 判定偏科等级
+    # 判定偏科等级（简单判定）
     if std_dev < 10:
         bias_level = "均衡发展"
     elif std_dev < 15:
@@ -215,10 +299,10 @@ def detect_subject_bias(row, subjects):
     min_subj = min(subject_scores.items(), key=lambda x: x[1]["标准化分"])
     
     return {
-        "标准差": round(std_dev, 2),
         "偏科等级": bias_level,
         "最强科目": f"{max_subj[0]}({max_subj[1]['标准化分']}%)",
         "最弱科目": f"{min_subj[0]}({min_subj[1]['标准化分']}%)",
+        "标准差": round(std_dev, 2),
         "平均标准化分": round(mean_score, 2),
         "科目详情": subject_scores
     }

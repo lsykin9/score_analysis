@@ -540,10 +540,108 @@ def _render_score_bonus_settings():
 def _render_bias_penalty_settings():
     """渲染偏科扣分设置"""
     st.markdown("---")
-    st.subheader("偏科扣分")
-    st.session_state.config_params["轻微偏科扣分"] = st.number_input("轻微偏科", value=st.session_state.config_params["轻微偏科扣分"], step=1, disabled=st.session_state.analysis_started)
-    st.session_state.config_params["明显偏科扣分"] = st.number_input("明显偏科", value=st.session_state.config_params["明显偏科扣分"], step=1, disabled=st.session_state.analysis_started)
-    st.session_state.config_params["严重偏科扣分"] = st.number_input("严重偏科", value=st.session_state.config_params["严重偏科扣分"], step=1, disabled=st.session_state.analysis_started)
+    st.subheader("偏科判定与扣分")
+    
+    st.markdown("**📊 偏科判定标准**")
+    st.caption("基于各科年级排名的混合判定法：综合考虑标准差、最大差距和相对离散度")
+    
+    # 轻微偏科阈值
+    st.markdown("**轻微偏科阈值**")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.session_state.config_params["轻微偏科_标准差"] = st.number_input(
+            "标准差", 
+            value=st.session_state.config_params.get("轻微偏科_标准差", 15), 
+            step=1, 
+            min_value=0,
+            disabled=st.session_state.analysis_started,
+            help="各科排名的标准差阈值"
+        )
+    with col2:
+        st.session_state.config_params["轻微偏科_最大差距"] = st.number_input(
+            "最大差距", 
+            value=st.session_state.config_params.get("轻微偏科_最大差距", 50), 
+            step=5, 
+            min_value=0,
+            disabled=st.session_state.analysis_started,
+            help="最好和最差科目的排名差距"
+        )
+    with col3:
+        st.session_state.config_params["轻微偏科_相对离散度"] = st.number_input(
+            "离散度(%)", 
+            value=st.session_state.config_params.get("轻微偏科_相对离散度", 80), 
+            step=5, 
+            min_value=0,
+            disabled=st.session_state.analysis_started,
+            help="最大差距占平均排名的百分比"
+        )
+    
+    # 明显偏科阈值
+    st.markdown("**明显偏科阈值**")
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        st.session_state.config_params["明显偏科_标准差"] = st.number_input(
+            "标准差 ", 
+            value=st.session_state.config_params.get("明显偏科_标准差", 30), 
+            step=1, 
+            min_value=0,
+            disabled=st.session_state.analysis_started
+        )
+    with col5:
+        st.session_state.config_params["明显偏科_最大差距"] = st.number_input(
+            "最大差距 ", 
+            value=st.session_state.config_params.get("明显偏科_最大差距", 100), 
+            step=5, 
+            min_value=0,
+            disabled=st.session_state.analysis_started
+        )
+    with col6:
+        st.session_state.config_params["明显偏科_相对离散度"] = st.number_input(
+            "离散度(%) ", 
+            value=st.session_state.config_params.get("明显偏科_相对离散度", 150), 
+            step=5, 
+            min_value=0,
+            disabled=st.session_state.analysis_started
+        )
+    
+    # 严重偏科阈值
+    st.markdown("**严重偏科阈值**")
+    col7, col8, col9 = st.columns(3)
+    with col7:
+        st.session_state.config_params["严重偏科_标准差"] = st.number_input(
+            "标准差  ", 
+            value=st.session_state.config_params.get("严重偏科_标准差", 60), 
+            step=1, 
+            min_value=0,
+            disabled=st.session_state.analysis_started
+        )
+    with col8:
+        st.session_state.config_params["严重偏科_最大差距"] = st.number_input(
+            "最大差距  ", 
+            value=st.session_state.config_params.get("严重偏科_最大差距", 200), 
+            step=10, 
+            min_value=0,
+            disabled=st.session_state.analysis_started
+        )
+    with col9:
+        st.session_state.config_params["严重偏科_相对离散度"] = st.number_input(
+            "离散度(%)  ", 
+            value=st.session_state.config_params.get("严重偏科_相对离散度", 300), 
+            step=10, 
+            min_value=0,
+            disabled=st.session_state.analysis_started
+        )
+    
+    # 扣分设置
+    st.markdown("---")
+    st.markdown("**💰 偏科扣分**")
+    col10, col11, col12 = st.columns(3)
+    with col10:
+        st.session_state.config_params["轻微偏科扣分"] = st.number_input("轻微扣分", value=st.session_state.config_params["轻微偏科扣分"], step=1, disabled=st.session_state.analysis_started)
+    with col11:
+        st.session_state.config_params["明显偏科扣分"] = st.number_input("明显扣分", value=st.session_state.config_params["明显偏科扣分"], step=1, disabled=st.session_state.analysis_started)
+    with col12:
+        st.session_state.config_params["严重偏科扣分"] = st.number_input("严重扣分", value=st.session_state.config_params["严重偏科扣分"], step=1, disabled=st.session_state.analysis_started)
 
 
 def _render_file_upload():

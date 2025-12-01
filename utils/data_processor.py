@@ -126,7 +126,17 @@ def process_data():
         "line_a": int(cfg.get("A线（排名）", cfg.get("线（排名）", 430))),
         "bonus_line_a": cfg.get("A线过线奖励", cfg.get("过线奖励", 5)),
         "line_b": int(cfg.get("B线（排名）", 500)),
-        "bonus_line_b": cfg.get("B线过线奖励", 3)
+        "bonus_line_b": cfg.get("B线过线奖励", 3),
+        # 偏科判定阈值
+        "轻微偏科_标准差": cfg.get("轻微偏科_标准差", 15),
+        "轻微偏科_最大差距": cfg.get("轻微偏科_最大差距", 50),
+        "轻微偏科_相对离散度": cfg.get("轻微偏科_相对离散度", 80),
+        "明显偏科_标准差": cfg.get("明显偏科_标准差", 30),
+        "明显偏科_最大差距": cfg.get("明显偏科_最大差距", 100),
+        "明显偏科_相对离散度": cfg.get("明显偏科_相对离散度", 150),
+        "严重偏科_标准差": cfg.get("严重偏科_标准差", 60),
+        "严重偏科_最大差距": cfg.get("严重偏科_最大差距", 200),
+        "严重偏科_相对离散度": cfg.get("严重偏科_相对离散度", 300)
     }
     
     # 定义科目
@@ -310,6 +320,16 @@ def process_data():
     
     for _, row in df_all.iterrows():
         name = row["姓名"]
+        
+        # 检测缺考：检查最新一次考试是否有科目缺考
+        is_absent = False
+        if has_subjects:
+            for subj, col in subject_cols_dict.items():
+                latest_score = row[col]
+                if pd.isna(latest_score) or latest_score == 0:
+                    is_absent = True
+                    break
+        
         # 将排名转换为整数,处理浮点数和NaN
         ranks = []
         for col in rank_cols:
@@ -321,32 +341,68 @@ def process_data():
         
         chain_len = 0
         chain_progress = 0.0
+        last_valid_rank_idx = -1  # 记录最后一个非缺考的排名位置
 
-        # 计算连续进步次数
-        for i in range(1, len(ranks)):
-            before, now = ranks[i - 1], ranks[i]
-            if now != 0 and before != 0 and now < before:
-                chain_len += 1
-            else:
-                chain_len = 0
+        # 计算连续进步次数（需要考虑缺考）
+        # 如果当前缺考，需要找到上一次有效成绩
+        if is_absent:
+            # 当前缺考，从倒数第二次开始往前找有效成绩
+            for i in range(len(ranks) - 2, -1, -1):
+                if ranks[i] != 0:
+                    last_valid_rank_idx = i
+                    break
+            
+            # 如果找到了有效成绩，计算到该位置为止的连续进步次数
+            if last_valid_rank_idx >= 0:
+                for i in range(1, last_valid_rank_idx + 1):
+                    before, now = ranks[i - 1], ranks[i]
+                    if now != 0 and before != 0 and now < before:
+                        chain_len += 1
+                    elif now != 0 and before != 0:
+                        # 退步则归零
+                        chain_len = 0
+        else:
+            # 当前没有缺考，正常计算连续进步次数
+            for i in range(1, len(ranks)):
+                before, now = ranks[i - 1], ranks[i]
+                if now != 0 and before != 0 and now < before:
+                    chain_len += 1
+                elif now != 0 and before != 0:
+                    # 退步则归零
+                    chain_len = 0
         
         # 计算最近一次进步得分
-        if len(ranks) >= 2:
+        if not is_absent and len(ranks) >= 2:
             _cur = ranks[-1]
-            _pre = ranks[-2]
+            # 找到上一次有效排名（跳过缺考）
+            _pre = None
+            for i in range(len(ranks) - 2, -1, -1):
+                if ranks[i] != 0:
+                    _pre = ranks[i]
+                    break
+            
             if _cur and _pre and _cur < _pre:
                 chain_progress = progress_score(int(_pre), int(_cur), config["weights"])
             else:
                 chain_progress = 0.0
+        else:
+            chain_progress = 0.0
 
-        # 排名加分（年级排名）
-        latest_rank = int(ranks[-1]) if ranks[-1] else 0
-        previous_rank = int(ranks[-2]) if len(ranks) > 1 and ranks[-2] else 9999
-        rank_add = ranking_bonus(latest_rank, previous_rank, config)
+        # 排名加分（年级排名）- 缺考时不加分
+        rank_add = 0
+        if not is_absent:
+            latest_rank = int(ranks[-1]) if ranks[-1] else 0
+            # 找到上一次有效排名（跳过缺考）
+            previous_rank = 9999
+            for i in range(len(ranks) - 2, -1, -1):
+                if ranks[i] != 0:
+                    previous_rank = int(ranks[i])
+                    break
+            rank_add = ranking_bonus(latest_rank, previous_rank, config)
         
-        # 集团排名加分
+        # 集团排名加分 - 缺考时不加分
         group_rank_add = 0
-        if group_rank_cols and len(group_rank_cols) > 0:
+        if not is_absent and group_rank_cols and len(group_rank_cols) > 0:
             latest_group_rank = row[group_rank_cols[-1]]
             if pd.notna(latest_group_rank) and latest_group_rank > 0:
                 group_rank_add = group_ranking_bonus(int(latest_group_rank), config)
@@ -354,28 +410,45 @@ def process_data():
         # 连续进步加分
         chain_add = chain_bonus_score(chain_len, config)
         
-        # 总分奖励加分
+        # 总分奖励加分 - 缺考时不加分
         score_add = 0
-        if score_cols and len(score_cols) > 0:
+        if not is_absent and score_cols and len(score_cols) > 0:
             latest_total_score = row[score_cols[-1]]
             if pd.notna(latest_total_score):
                 score_add = total_score_bonus(float(latest_total_score), config)
             else:
                 score_add = 0
         
-        # 偏科扣分
+        # 偏科扣分 - 缺考时不扣分
         bias_deduct = 0
         bias_level = "均衡发展"
-        if has_subjects:
+        if not is_absent and has_subjects:
+            # 构建各科分数字典
             latest_scores = {"姓名": name}
             for subj, col in subject_cols_dict.items():
                 latest_scores[subj] = row[col]
             
-            bias_info = detect_subject_bias(latest_scores, subjects)
+            # 构建各科排名字典（新格式）
+            subject_ranks = {}
+            for subj in subjects:
+                # 查找该科目的年级排名列
+                rank_col = f"{subj}_年级排名_{exam_labels.get(len(rank_cols), f'第{len(rank_cols)}次考试')}" if exam_labels else None
+                if rank_col and rank_col in df_all.columns:
+                    rank_val = row[rank_col]
+                    if pd.notna(rank_val) and rank_val > 0:
+                        subject_ranks[subj] = int(rank_val)
+            
+            # 调用偏科检测（传入排名和配置）
+            bias_info = detect_subject_bias(latest_scores, subjects, subject_ranks, cfg)
             bias_level = bias_info["偏科等级"]
             bias_deduct = bias_penalty_score(bias_level, config)
             
             bias_dict[name] = bias_info
+        elif is_absent:
+            # 缺考时标记为"缺考"
+            bias_level = "缺考"
+            if name not in bias_dict:
+                bias_dict[name] = {"偏科等级": "缺考"}
         
         # 总得分
         total = chain_progress + rank_add + group_rank_add + chain_add + score_add + bias_deduct
