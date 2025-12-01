@@ -87,6 +87,32 @@ st.markdown("""
         transition: all 0.2s ease-in-out;
     }
     
+    /* 按钮内容居中 */
+    .stButton > button {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        text-align: center !important;
+        padding: 0.4rem 0.2rem !important;  /* 增大上下padding */
+        border-width: 2px !important;  /* 加粗边框 */
+    }
+    
+    /* 确保按钮内的文本也居中 */
+    .stButton button p {
+        width: 100%;
+        text-align: center;
+        margin: 0 auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    /* 侧边栏按钮特殊处理 */
+    section[data-testid="stSidebar"] .stButton > button {
+        padding: 0.35rem 0.2rem !important;
+        border-width: 1.5px !important;
+    }
+    
     /* 删除按钮悬停效果 */
     button[kind="secondary"] {
         transition: all 0.2s ease-in-out;

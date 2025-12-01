@@ -85,22 +85,24 @@ def _render_interval_settings():
         # 区间标题
         st.markdown(f"**区间 {idx + 1}**: `({interval['start']}-{interval['end']})`")
         
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+        # 使用与排名奖励一致的列宽比例
+        col1, col2, col3, col4 = st.columns([2.8, 2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("起始", value=int(interval["start"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"start_{interval_id}", label_visibility="visible")
+            st.number_input("起始", value=int(interval["start"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"start_{interval_id}")
         
         with col2:
-            st.number_input("结束", value=int(interval["end"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"end_{interval_id}", label_visibility="visible")
+            st.number_input("结束", value=int(interval["end"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"end_{interval_id}")
         
         with col3:
-            st.number_input("权重", value=float(interval["weight"]), step=0.1, min_value=0.0, disabled=st.session_state.analysis_started, key=f"weight_{interval_id}", label_visibility="visible")
+            st.number_input("权重", value=float(interval["weight"]), step=0.1, min_value=0.0, disabled=st.session_state.analysis_started, key=f"weight_{interval_id}")
         
         with col4:
-            st.write("")  # 空行对齐
+            # 使用label占位实现对齐
+            st.markdown("###### 　")  # 透明占位符
             # 删除按钮(保留至少1个区间)
             can_delete = len(st.session_state.rank_intervals) > 1
-            if st.button("🗑️", key=f"del_{interval_id}", disabled=st.session_state.analysis_started or not can_delete):
+            if st.button("🗑️", key=f"del_{interval_id}", disabled=st.session_state.analysis_started or not can_delete, use_container_width=True, type="secondary"):
                 # 操作锁避免重复
                 if not st.session_state.get('_operation_lock', False):
                     st.session_state._operation_lock = True
@@ -124,7 +126,8 @@ def _render_interval_settings():
     
     # 添加新区间按钮
     if not st.session_state.analysis_started:
-        if st.button("➕ 添加区间", key="add_interval"):
+        st.markdown("")
+        if st.button("➕ 添加区间", key="add_interval", use_container_width=True, type="primary"):
             # 操作锁避免重复
             if not st.session_state.get('_operation_lock', False):
                 st.session_state._operation_lock = True
@@ -174,7 +177,7 @@ def _render_rank_bonus_settings():
         # 奖励标题
         st.markdown(f"**奖励档位 {idx + 1}**: `前 {bonus['threshold']} 名 → {bonus['bonus']} 分`")
         
-        col1, col2, col3 = st.columns([2, 2, 1])
+        col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
         
         with col1:
             st.number_input("前N名", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"bonus_thresh_{bonus_id}")
@@ -183,9 +186,10 @@ def _render_rank_bonus_settings():
             st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"bonus_val_{bonus_id}")
         
         with col3:
-            st.write("")  # 空行对齐
+            # 使用label占位实现对齐
+            st.markdown("###### 　")  # 透明占位符
             # 删除按钮(保留至少1个奖励)
-            if st.button("🗑️", key=f"del_bonus_{bonus_id}", disabled=st.session_state.analysis_started or len(st.session_state.rank_bonuses) <= 1):
+            if st.button("🗑️", key=f"del_bonus_{bonus_id}", disabled=st.session_state.analysis_started or len(st.session_state.rank_bonuses) <= 1, use_container_width=True, type="secondary"):
                 # 操作锁避免重复
                 if not st.session_state.get('_operation_lock', False):
                     st.session_state._operation_lock = True
@@ -208,7 +212,8 @@ def _render_rank_bonus_settings():
     
     # 添加新排名奖励按钮
     if not st.session_state.analysis_started:
-        if st.button("➕ 添加排名奖励", key="add_bonus"):
+        st.markdown("")
+        if st.button("➕ 添加排名奖励", key="add_bonus", use_container_width=True, type="primary"):
             # 操作锁避免重复
             if not st.session_state.get('_operation_lock', False):
                 st.session_state._operation_lock = True

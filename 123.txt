@@ -1,0 +1,1 @@
+conda run -n Machine_Learning streamlit run app.py
