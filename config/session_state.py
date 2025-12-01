@@ -31,6 +31,10 @@ def initialize_session_state():
         st.session_state.next_bonus_id = 0
     if 'next_group_bonus_id' not in st.session_state:
         st.session_state.next_group_bonus_id = 0
+    if 'next_chain_bonus_id' not in st.session_state:
+        st.session_state.next_chain_bonus_id = 0
+    if 'next_score_bonus_id' not in st.session_state:
+        st.session_state.next_score_bonus_id = 0
 
     # 动态区间权重列表
     if 'rank_intervals' not in st.session_state:
@@ -66,6 +70,26 @@ def initialize_session_state():
             {"id": 3, "threshold": 300, "bonus": 5}
         ]
         st.session_state.next_group_bonus_id = 4
+
+    # 动态连续进步奖励列表
+    if 'chain_bonuses' not in st.session_state:
+        st.session_state.chain_bonuses = [
+            {"id": 0, "times": 1, "bonus": 5},
+            {"id": 1, "times": 2, "bonus": 8},
+            {"id": 2, "times": 3, "bonus": 12},
+            {"id": 3, "times": 4, "bonus": 18},
+            {"id": 4, "times": 5, "bonus": 25}
+        ]
+        st.session_state.next_chain_bonus_id = 5
+
+    # 动态总分奖励列表
+    if 'score_bonuses' not in st.session_state:
+        st.session_state.score_bonuses = [
+            {"id": 0, "threshold": 600, "bonus": 15},
+            {"id": 1, "threshold": 650, "bonus": 20},
+            {"id": 2, "threshold": 700, "bonus": 30}
+        ]
+        st.session_state.next_score_bonus_id = 3
 
     # 默认参数配置
     if 'config_params' not in st.session_state:

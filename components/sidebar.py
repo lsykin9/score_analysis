@@ -48,7 +48,7 @@ def render_sidebar():
 
 
 def _save_interval_values():
-    """从session_state的临时key中保存区间值到rank_intervals"""
+    """从session_state的临时key中保存区间值到rank_intervals（即时保存）"""
     for idx, interval in enumerate(st.session_state.rank_intervals):
         interval_id = interval["id"]
         start_key = f"start_{interval_id}"
@@ -56,11 +56,17 @@ def _save_interval_values():
         weight_key = f"weight_{interval_id}"
         
         if start_key in st.session_state:
-            st.session_state.rank_intervals[idx]["start"] = st.session_state[start_key]
+            new_val = st.session_state[start_key]
+            if new_val != st.session_state.rank_intervals[idx]["start"]:
+                st.session_state.rank_intervals[idx]["start"] = new_val
         if end_key in st.session_state:
-            st.session_state.rank_intervals[idx]["end"] = st.session_state[end_key]
+            new_val = st.session_state[end_key]
+            if new_val != st.session_state.rank_intervals[idx]["end"]:
+                st.session_state.rank_intervals[idx]["end"] = new_val
         if weight_key in st.session_state:
-            st.session_state.rank_intervals[idx]["weight"] = st.session_state[weight_key]
+            new_val = st.session_state[weight_key]
+            if new_val != st.session_state.rank_intervals[idx]["weight"]:
+                st.session_state.rank_intervals[idx]["weight"] = new_val
 
 
 def _save_bonus_values():
@@ -89,6 +95,32 @@ def _save_group_bonus_values():
             st.session_state.group_rank_bonuses[idx]["bonus"] = st.session_state[val_key]
 
 
+def _save_chain_bonus_values():
+    """从session_state的临时key中保存连续进步奖励值到chain_bonuses"""
+    for idx, bonus in enumerate(st.session_state.chain_bonuses):
+        bonus_id = bonus["id"]
+        times_key = f"chain_times_{bonus_id}"
+        val_key = f"chain_val_{bonus_id}"
+        
+        if times_key in st.session_state:
+            st.session_state.chain_bonuses[idx]["times"] = st.session_state[times_key]
+        if val_key in st.session_state:
+            st.session_state.chain_bonuses[idx]["bonus"] = st.session_state[val_key]
+
+
+def _save_score_bonus_values():
+    """从session_state的临时key中保存总分奖励值到score_bonuses"""
+    for idx, bonus in enumerate(st.session_state.score_bonuses):
+        bonus_id = bonus["id"]
+        thresh_key = f"score_thresh_{bonus_id}"
+        val_key = f"score_val_{bonus_id}"
+        
+        if thresh_key in st.session_state:
+            st.session_state.score_bonuses[idx]["threshold"] = st.session_state[thresh_key]
+        if val_key in st.session_state:
+            st.session_state.score_bonuses[idx]["bonus"] = st.session_state[val_key]
+
+
 def _render_interval_settings():
     """渲染区间权重设置"""
     st.subheader("区间权重")
@@ -96,20 +128,23 @@ def _render_interval_settings():
     # 显示当前所有区间
     for idx, interval in enumerate(st.session_state.rank_intervals):
         interval_id = interval["id"]
-        # 区间标题
-        st.markdown(f"**区间 {idx + 1}**: `({interval['start']}-{interval['end']})`")
+        # 区间标题 - 从session_state读取实际保存的值
+        actual_start = interval["start"]
+        actual_end = interval["end"]
+        actual_weight = interval["weight"]
+        st.markdown(f"**区间 {idx + 1}**: `({actual_start}-{actual_end}) 权重:{actual_weight}`")
         
         # 使用与排名奖励一致的列宽比例
         col1, col2, col3, col4 = st.columns([2.8, 2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("起始", value=int(interval["start"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"start_{interval_id}")
+            st.number_input("起始", value=int(interval["start"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"start_{interval_id}", on_change=_save_interval_values)
         
         with col2:
-            st.number_input("结束", value=int(interval["end"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"end_{interval_id}")
+            st.number_input("结束", value=int(interval["end"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"end_{interval_id}", on_change=_save_interval_values)
         
         with col3:
-            st.number_input("权重", value=float(interval["weight"]), step=0.1, min_value=0.0, disabled=st.session_state.analysis_started, key=f"weight_{interval_id}")
+            st.number_input("权重", value=float(interval["weight"]), step=0.1, min_value=0.0, disabled=st.session_state.analysis_started, key=f"weight_{interval_id}", on_change=_save_interval_values)
         
         with col4:
             # 使用label占位实现对齐
@@ -232,10 +267,10 @@ def _render_rank_bonus_settings():
         col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("前N名", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"bonus_thresh_{bonus_id}")
+            st.number_input("前N名", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"bonus_thresh_{bonus_id}", on_change=_save_bonus_values)
         
         with col2:
-            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"bonus_val_{bonus_id}")
+            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"bonus_val_{bonus_id}", on_change=_save_bonus_values)
         
         with col3:
             # 使用label占位实现对齐
@@ -303,10 +338,10 @@ def _render_group_rank_bonus_settings():
         col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("前N名", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"group_bonus_thresh_{bonus_id}")
+            st.number_input("前N名", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"group_bonus_thresh_{bonus_id}", on_change=_save_group_bonus_values)
         
         with col2:
-            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"group_bonus_val_{bonus_id}")
+            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"group_bonus_val_{bonus_id}", on_change=_save_group_bonus_values)
         
         with col3:
             # 使用label占位实现对齐
@@ -364,23 +399,142 @@ def _render_chain_bonus_settings():
     """渲染连续进步奖励设置"""
     st.markdown("---")
     st.subheader("连续进步奖励")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.config_params["连续进步第1次奖励"] = st.number_input("第1次", value=st.session_state.config_params["连续进步第1次奖励"], step=1, disabled=st.session_state.analysis_started)
-        st.session_state.config_params["连续进步第2次奖励"] = st.number_input("第2次", value=st.session_state.config_params["连续进步第2次奖励"], step=1, disabled=st.session_state.analysis_started)
-        st.session_state.config_params["连续进步第3次奖励"] = st.number_input("第3次", value=st.session_state.config_params["连续进步第3次奖励"], step=1, disabled=st.session_state.analysis_started)
-    with col2:
-        st.session_state.config_params["连续进步第4次奖励"] = st.number_input("第4次", value=st.session_state.config_params["连续进步第4次奖励"], step=1, disabled=st.session_state.analysis_started)
-        st.session_state.config_params["连续进步第5次奖励"] = st.number_input("第5次", value=st.session_state.config_params["连续进步第5次奖励"], step=1, disabled=st.session_state.analysis_started)
+    
+    # 显示当前所有连续进步奖励
+    for idx, bonus in enumerate(st.session_state.chain_bonuses):
+        bonus_id = bonus["id"]
+        # 奖励标题
+        st.markdown(f"**奖励档位 {idx + 1}**: `连续 {bonus['times']} 次 → {bonus['bonus']} 分`")
+        
+        col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
+        
+        with col1:
+            st.number_input("连续次数", value=int(bonus["times"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"chain_times_{bonus_id}", on_change=_save_chain_bonus_values)
+        
+        with col2:
+            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"chain_val_{bonus_id}", on_change=_save_chain_bonus_values)
+        
+        with col3:
+            # 使用label占位实现对齐
+            st.markdown("###### 　")  # 透明占位符
+            # 删除按钮(保留至少1个奖励)
+            if st.button("🗑️", key=f"del_chain_{bonus_id}", disabled=st.session_state.analysis_started or len(st.session_state.chain_bonuses) <= 1, use_container_width=True, type="secondary"):
+                # 操作锁避免重复
+                if not st.session_state.get('_operation_lock', False):
+                    st.session_state._operation_lock = True
+                    _save_chain_bonus_values()  # 先保存其他奖励的值
+                    # 立即删除
+                    st.session_state.chain_bonuses = [
+                        b for b in st.session_state.chain_bonuses if b["id"] != bonus_id
+                    ]
+                    # 清理废弃的key
+                    keys_to_delete = [k for k in st.session_state.keys() 
+                                     if k.startswith(f"chain_times_{bonus_id}") or 
+                                        k.startswith(f"chain_val_{bonus_id}") or 
+                                        k.startswith(f"del_chain_{bonus_id}")]
+                    for key in keys_to_delete:
+                        del st.session_state[key]
+                    st.session_state.param_expander_expanded = True
+                    time.sleep(0.15)  # 延迟配合CSS过渡动画
+                    st.session_state._operation_lock = False
+                    st.rerun(scope="fragment")
+    
+    # 添加新连续进步奖励按钮
+    if not st.session_state.analysis_started:
+        st.markdown("")
+        if st.button("➕ 添加连续进步奖励", key="add_chain_bonus", use_container_width=True, type="primary"):
+            # 操作锁避免重复
+            if not st.session_state.get('_operation_lock', False):
+                st.session_state._operation_lock = True
+                # 先保存当前所有输入框的值
+                _save_chain_bonus_values()
+                
+                # 默认新奖励次数为最后一个+1
+                last_times = st.session_state.chain_bonuses[-1]["times"] if st.session_state.chain_bonuses else 0
+                
+                new_id = st.session_state.next_chain_bonus_id
+                st.session_state.next_chain_bonus_id += 1
+                
+                st.session_state.chain_bonuses.append({
+                    "id": new_id,
+                    "times": last_times + 1,
+                    "bonus": 5
+                })
+                st.session_state.param_expander_expanded = True
+                time.sleep(0.15)  # 延迟配合CSS过渡动画
+                st.session_state._operation_lock = False
+                st.rerun(scope="fragment")
 
 
 def _render_score_bonus_settings():
     """渲染总分奖励设置"""
     st.markdown("---")
     st.subheader("总分奖励")
-    st.session_state.config_params["总分大于600奖励"] = st.number_input("总分>600", value=st.session_state.config_params["总分大于600奖励"], step=1, disabled=st.session_state.analysis_started)
-    st.session_state.config_params["总分大于650奖励"] = st.number_input("总分>650", value=st.session_state.config_params["总分大于650奖励"], step=1, disabled=st.session_state.analysis_started)
-    st.session_state.config_params["总分大于700奖励"] = st.number_input("总分>700", value=st.session_state.config_params["总分大于700奖励"], step=1, disabled=st.session_state.analysis_started)
+    
+    # 显示当前所有总分奖励
+    for idx, bonus in enumerate(st.session_state.score_bonuses):
+        bonus_id = bonus["id"]
+        # 奖励标题
+        st.markdown(f"**奖励档位 {idx + 1}**: `总分 > {bonus['threshold']} → {bonus['bonus']} 分`")
+        
+        col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
+        
+        with col1:
+            st.number_input("总分阈值", value=int(bonus["threshold"]), step=10, min_value=0, disabled=st.session_state.analysis_started, key=f"score_thresh_{bonus_id}", on_change=_save_score_bonus_values)
+        
+        with col2:
+            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"score_val_{bonus_id}", on_change=_save_score_bonus_values)
+        
+        with col3:
+            # 使用label占位实现对齐
+            st.markdown("###### 　")  # 透明占位符
+            # 删除按钮(保留至少1个奖励)
+            if st.button("🗑️", key=f"del_score_{bonus_id}", disabled=st.session_state.analysis_started or len(st.session_state.score_bonuses) <= 1, use_container_width=True, type="secondary"):
+                # 操作锁避免重复
+                if not st.session_state.get('_operation_lock', False):
+                    st.session_state._operation_lock = True
+                    _save_score_bonus_values()  # 先保存其他奖励的值
+                    # 立即删除
+                    st.session_state.score_bonuses = [
+                        b for b in st.session_state.score_bonuses if b["id"] != bonus_id
+                    ]
+                    # 清理废弃的key
+                    keys_to_delete = [k for k in st.session_state.keys() 
+                                     if k.startswith(f"score_thresh_{bonus_id}") or 
+                                        k.startswith(f"score_val_{bonus_id}") or 
+                                        k.startswith(f"del_score_{bonus_id}")]
+                    for key in keys_to_delete:
+                        del st.session_state[key]
+                    st.session_state.param_expander_expanded = True
+                    time.sleep(0.15)  # 延迟配合CSS过渡动画
+                    st.session_state._operation_lock = False
+                    st.rerun(scope="fragment")
+    
+    # 添加新总分奖励按钮
+    if not st.session_state.analysis_started:
+        st.markdown("")
+        if st.button("➕ 添加总分奖励", key="add_score_bonus", use_container_width=True, type="primary"):
+            # 操作锁避免重复
+            if not st.session_state.get('_operation_lock', False):
+                st.session_state._operation_lock = True
+                # 先保存当前所有输入框的值
+                _save_score_bonus_values()
+                
+                # 默认新奖励阈值为最后一个+50
+                last_threshold = st.session_state.score_bonuses[-1]["threshold"] if st.session_state.score_bonuses else 600
+                
+                new_id = st.session_state.next_score_bonus_id
+                st.session_state.next_score_bonus_id += 1
+                
+                st.session_state.score_bonuses.append({
+                    "id": new_id,
+                    "threshold": last_threshold + 50,
+                    "bonus": 5
+                })
+                st.session_state.param_expander_expanded = True
+                time.sleep(0.15)  # 延迟配合CSS过渡动画
+                st.session_state._operation_lock = False
+                st.rerun(scope="fragment")
 
 
 def _render_bias_penalty_settings():

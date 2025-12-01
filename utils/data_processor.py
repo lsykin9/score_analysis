@@ -53,6 +53,28 @@ def _save_all_input_values():
             st.session_state.group_rank_bonuses[idx]["threshold"] = st.session_state[thresh_key]
         if val_key in st.session_state:
             st.session_state.group_rank_bonuses[idx]["bonus"] = st.session_state[val_key]
+    
+    # 保存连续进步奖励值
+    for idx, bonus in enumerate(st.session_state.chain_bonuses):
+        bonus_id = bonus["id"]
+        times_key = f"chain_times_{bonus_id}"
+        val_key = f"chain_val_{bonus_id}"
+        
+        if times_key in st.session_state:
+            st.session_state.chain_bonuses[idx]["times"] = st.session_state[times_key]
+        if val_key in st.session_state:
+            st.session_state.chain_bonuses[idx]["bonus"] = st.session_state[val_key]
+    
+    # 保存总分奖励值
+    for idx, bonus in enumerate(st.session_state.score_bonuses):
+        bonus_id = bonus["id"]
+        thresh_key = f"score_thresh_{bonus_id}"
+        val_key = f"score_val_{bonus_id}"
+        
+        if thresh_key in st.session_state:
+            st.session_state.score_bonuses[idx]["threshold"] = st.session_state[thresh_key]
+        if val_key in st.session_state:
+            st.session_state.score_bonuses[idx]["bonus"] = st.session_state[val_key]
 
 
 def process_data():
@@ -80,21 +102,11 @@ def process_data():
     # 从动态集团排名奖励构建group_rank_bonus
     group_rank_bonus = {item["threshold"]: item["bonus"] for item in st.session_state.group_rank_bonuses}
     
-    # 连续进步加分
-    chain_bonus = {
-        1: cfg.get("连续进步第1次奖励", 5),
-        2: cfg.get("连续进步第2次奖励", 10),
-        3: cfg.get("连续进步第3次奖励", 20),
-        4: cfg.get("连续进步第4次奖励", 30),
-        5: cfg.get("连续进步第5次奖励", 50)
-    }
+    # 从动态连续进步奖励构建chain_bonus
+    chain_bonus = {item["times"]: item["bonus"] for item in st.session_state.chain_bonuses}
     
-    # 总分奖励阈值
-    score_bonus = {
-        600: cfg.get("总分大于600奖励", 30),
-        650: cfg.get("总分大于650奖励", 40),
-        700: cfg.get("总分大于700奖励", 50)
-    }
+    # 从动态总分奖励构建score_bonus
+    score_bonus = {item["threshold"]: item["bonus"] for item in st.session_state.score_bonuses}
     
     # 偏科扣分参数
     bias_penalty = {
