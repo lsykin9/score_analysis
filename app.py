@@ -70,24 +70,34 @@ if 'history_file_content' not in st.session_state:
 if 'history_exam_count' not in st.session_state:
     st.session_state.history_exam_count = 0
 
+# 初始化动态区间权重列表 (格式: [{"start": 0, "end": 5, "weight": 2.0}, ...])
+if 'rank_intervals' not in st.session_state:
+    st.session_state.rank_intervals = [
+        {"start": 0, "end": 20, "weight": 2.0},
+        {"start": 21, "end": 50, "weight": 1.8},
+        {"start": 51, "end": 100, "weight": 1.5},
+        {"start": 101, "end": 150, "weight": 1.2},
+        {"start": 151, "end": 200, "weight": 1.0},
+        {"start": 201, "end": 300, "weight": 0.8},
+        {"start": 301, "end": 430, "weight": 0.6},
+        {"start": 431, "end": 99999, "weight": 0.5}
+    ]
+
+# 初始化动态排名奖励列表
+if 'rank_bonuses' not in st.session_state:
+    st.session_state.rank_bonuses = [
+        {"threshold": 10, "bonus": 30},
+        {"threshold": 20, "bonus": 25},
+        {"threshold": 30, "bonus": 20},
+        {"threshold": 50, "bonus": 15},
+        {"threshold": 100, "bonus": 10}
+    ]
+
 # 初始化默认参数配置
 if 'config_params' not in st.session_state:
     st.session_state.config_params = {
-        "排名前20": 2.0,
-        "排名21-50": 1.8,
-        "排名51-100": 1.5,
-        "排名101-150": 1.2,
-        "排名151-200": 1.0,
-        "排名201-300": 0.8,
-        "排名301-线": 0.6,
-        "排名线下": 0.5,
         "线（排名）": 430,
         "过线奖励": 5,
-        "前10奖励": 30,
-        "前20奖励": 25,
-        "前30奖励": 20,
-        "前50奖励": 15,
-        "前100奖励": 10,
         "连续进步第1次奖励": 5,
         "连续进步第2次奖励": 8,
         "连续进步第3次奖励": 12,
@@ -108,17 +118,55 @@ with st.sidebar:
     # 创建可折叠的参数设置区域
     with st.expander("📊 评分参数设置", expanded=False):
         st.subheader("区间权重")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state.config_params["排名前20"] = st.number_input("排名前20", value=st.session_state.config_params["排名前20"], step=0.1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["排名21-50"] = st.number_input("排名21-50", value=st.session_state.config_params["排名21-50"], step=0.1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["排名51-100"] = st.number_input("排名51-100", value=st.session_state.config_params["排名51-100"], step=0.1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["排名101-150"] = st.number_input("排名101-150", value=st.session_state.config_params["排名101-150"], step=0.1, disabled=st.session_state.analysis_started)
-        with col2:
-            st.session_state.config_params["排名151-200"] = st.number_input("排名151-200", value=st.session_state.config_params["排名151-200"], step=0.1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["排名201-300"] = st.number_input("排名201-300", value=st.session_state.config_params["排名201-300"], step=0.1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["排名301-线"] = st.number_input("排名301-线", value=st.session_state.config_params["排名301-线"], step=0.1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["排名线下"] = st.number_input("排名线下", value=st.session_state.config_params["排名线下"], step=0.1, disabled=st.session_state.analysis_started)
+        
+        # 显示当前所有区间
+        for idx, interval in enumerate(st.session_state.rank_intervals):
+            col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+            
+            with col1:
+                new_start = st.number_input(f"起始_{idx}", value=int(interval["start"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"start_{idx}")
+                if not st.session_state.analysis_started:
+                    st.session_state.rank_intervals[idx]["start"] = new_start
+            
+            with col2:
+                new_end = st.number_input(f"结束_{idx}", value=int(interval["end"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"end_{idx}")
+                if not st.session_state.analysis_started:
+                    st.session_state.rank_intervals[idx]["end"] = new_end
+            
+            with col3:
+                new_weight = st.number_input(f"权重_{idx}", value=float(interval["weight"]), step=0.1, min_value=0.0, disabled=st.session_state.analysis_started, key=f"weight_{idx}")
+                if not st.session_state.analysis_started:
+                    st.session_state.rank_intervals[idx]["weight"] = new_weight
+            
+            with col4:
+                # 删除按钮(保留至少1个区间)
+                can_delete = len(st.session_state.rank_intervals) > 1
+                if st.button("🗑️", key=f"del_{idx}", disabled=st.session_state.analysis_started or not can_delete):
+                    st.session_state.rank_intervals.pop(idx)
+                    st.rerun()
+            
+            # 显示区间标签
+            st.caption(f"({interval['start']}-{interval['end']})")
+        
+        # 添加新区间按钮
+        if not st.session_state.analysis_started:
+            if st.button("➕ 添加区间", key="add_interval"):
+                # 在末尾添加新区间
+                if len(st.session_state.rank_intervals) > 0:
+                    last_interval = st.session_state.rank_intervals[-1]
+                    # 默认新区间起始为最后一个区间结束+1
+                    new_start = last_interval["end"] + 1
+                    new_end = new_start + 50
+                else:
+                    new_start = 0
+                    new_end = 50
+                
+                st.session_state.rank_intervals.append({
+                    "start": new_start,
+                    "end": new_end,
+                    "weight": 1.0
+                })
+                st.rerun()
         
         st.markdown("---")
         st.subheader("排名线和过线奖励")
@@ -127,14 +175,39 @@ with st.sidebar:
         
         st.markdown("---")
         st.subheader("排名奖励")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state.config_params["前10奖励"] = st.number_input("前10奖励", value=st.session_state.config_params["前10奖励"], step=1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["前20奖励"] = st.number_input("前20奖励", value=st.session_state.config_params["前20奖励"], step=1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["前30奖励"] = st.number_input("前30奖励", value=st.session_state.config_params["前30奖励"], step=1, disabled=st.session_state.analysis_started)
-        with col2:
-            st.session_state.config_params["前50奖励"] = st.number_input("前50奖励", value=st.session_state.config_params["前50奖励"], step=1, disabled=st.session_state.analysis_started)
-            st.session_state.config_params["前100奖励"] = st.number_input("前100奖励", value=st.session_state.config_params["前100奖励"], step=1, disabled=st.session_state.analysis_started)
+        
+        # 显示当前所有排名奖励
+        for idx, bonus in enumerate(st.session_state.rank_bonuses):
+            col1, col2, col3 = st.columns([2, 2, 1])
+            
+            with col1:
+                new_threshold = st.number_input(f"前N名_{idx}", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"bonus_thresh_{idx}")
+                if not st.session_state.analysis_started:
+                    st.session_state.rank_bonuses[idx]["threshold"] = new_threshold
+            
+            with col2:
+                new_bonus = st.number_input(f"奖励分_{idx}", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"bonus_val_{idx}")
+                if not st.session_state.analysis_started:
+                    st.session_state.rank_bonuses[idx]["bonus"] = new_bonus
+            
+            with col3:
+                # 删除按钮(保留至少1个奖励)
+                if st.button("🗑️", key=f"del_bonus_{idx}", disabled=st.session_state.analysis_started or len(st.session_state.rank_bonuses) <= 1):
+                    st.session_state.rank_bonuses.pop(idx)
+                    st.rerun()
+            
+            st.caption(f"(0-{bonus['threshold']})")
+        
+        # 添加新排名奖励按钮
+        if not st.session_state.analysis_started:
+            if st.button("➕ 添加排名奖励", key="add_bonus"):
+                # 默认新奖励阈值为最后一个+10
+                last_threshold = st.session_state.rank_bonuses[-1]["threshold"] if st.session_state.rank_bonuses else 0
+                st.session_state.rank_bonuses.append({
+                    "threshold": last_threshold + 10,
+                    "bonus": 5
+                })
+                st.rerun()
         
         st.markdown("---")
         st.subheader("连续进步奖励")
@@ -327,26 +400,16 @@ try:
     # 从 session state 构建配置
     cfg = st.session_state.config_params
     
-    # 提取区间权重
-    weights = [
-        (1, 20, cfg.get("排名前20", 4.0)),
-        (21, 50, cfg.get("排名21-50", 3.5)),
-        (51, 100, cfg.get("排名51-100", 3.0)),
-        (101, 150, cfg.get("排名101-150", 2.5)),
-        (151, 200, cfg.get("排名151-200", 2.0)),
-        (201, 300, cfg.get("排名201-300", 1.5)),
-        (301, int(cfg.get("线（排名）", 430)), cfg.get("排名301-线", 1.0)),
-        (int(cfg.get("线（排名）", 430)) + 1, float("inf"), cfg.get("排名线下", 0.8))
-    ]
+    # 直接从动态区间构建weights (不再处理"线"等特殊值)
+    weights = []
+    for interval in st.session_state.rank_intervals:
+        start = int(interval["start"])
+        end = int(interval["end"])
+        weight = float(interval["weight"])
+        weights.append((start, end, weight))
     
-    # 排名加分
-    rank_bonus = {
-        10: cfg.get("前10奖励", 50),
-        20: cfg.get("前20奖励", 40),
-        30: cfg.get("前30奖励", 30),
-        50: cfg.get("前50奖励", 20),
-        100: cfg.get("前100奖励", 10)
-    }
+    # 从动态排名奖励构建rank_bonus
+    rank_bonus = {item["threshold"]: item["bonus"] for item in st.session_state.rank_bonuses}
     
     # 连续进步加分
     chain_bonus = {
@@ -378,7 +441,7 @@ try:
         "score_bonus": score_bonus,
         "bias_penalty": bias_penalty,
         "line": int(cfg.get("线（排名）", 430)),
-        "bonus_line": cfg.get("过线奖励", 0)
+        "bonus_line": cfg.get("过线奖励", 5)
     }
     
     # 定义科目
