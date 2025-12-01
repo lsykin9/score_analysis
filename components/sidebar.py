@@ -5,6 +5,25 @@
 import streamlit as st
 import pandas as pd
 import io
+import time
+
+
+def _render_param_settings():
+    """渲染参数设置区域"""
+    # 初始化expander状态
+    if 'param_expander_expanded' not in st.session_state:
+        st.session_state.param_expander_expanded = False
+    
+    # 创建可折叠的参数设置区域
+    expander = st.expander("📊 评分参数设置", expanded=st.session_state.param_expander_expanded)
+    
+    with expander:
+        _render_interval_settings()
+        _render_line_and_bonus_settings()
+        _render_rank_bonus_settings()
+        _render_chain_bonus_settings()
+        _render_score_bonus_settings()
+        _render_bias_penalty_settings()
 
 
 def render_sidebar():
@@ -13,61 +32,8 @@ def render_sidebar():
     with st.sidebar:
         st.header("⚙️ 参数配置")
         
-        # 在expander之前处理删除操作，避免在expander内部修改状态
-        if 'interval_to_delete' in st.session_state and st.session_state.interval_to_delete is not None:
-            deleted_id = st.session_state.interval_to_delete
-            
-            # 删除区间数据
-            st.session_state.rank_intervals = [
-                interval for interval in st.session_state.rank_intervals 
-                if interval["id"] != deleted_id
-            ]
-            
-            # 清理对应的session_state key
-            keys_to_delete = []
-            for key in st.session_state.keys():
-                if key.startswith(f"start_{deleted_id}") or key.startswith(f"end_{deleted_id}") or key.startswith(f"weight_{deleted_id}") or key.startswith(f"del_{deleted_id}"):
-                    keys_to_delete.append(key)
-            for key in keys_to_delete:
-                del st.session_state[key]
-            
-            st.session_state.interval_to_delete = None
-            st.session_state.param_expander_expanded = True  # 保持展开
-        
-        if 'bonus_to_delete' in st.session_state and st.session_state.bonus_to_delete is not None:
-            deleted_id = st.session_state.bonus_to_delete
-            
-            # 删除奖励数据
-            st.session_state.rank_bonuses = [
-                bonus for bonus in st.session_state.rank_bonuses 
-                if bonus["id"] != deleted_id
-            ]
-            
-            # 清理对应的session_state key
-            keys_to_delete = []
-            for key in st.session_state.keys():
-                if key.startswith(f"bonus_thresh_{deleted_id}") or key.startswith(f"bonus_val_{deleted_id}") or key.startswith(f"del_bonus_{deleted_id}"):
-                    keys_to_delete.append(key)
-            for key in keys_to_delete:
-                del st.session_state[key]
-            
-            st.session_state.bonus_to_delete = None
-            st.session_state.param_expander_expanded = True  # 保持展开
-        
-        # 初始化expander状态
-        if 'param_expander_expanded' not in st.session_state:
-            st.session_state.param_expander_expanded = False
-        
-        # 创建可折叠的参数设置区域
-        expander = st.expander("📊 评分参数设置", expanded=st.session_state.param_expander_expanded)
-        
-        with expander:
-            _render_interval_settings()
-            _render_line_and_bonus_settings()
-            _render_rank_bonus_settings()
-            _render_chain_bonus_settings()
-            _render_score_bonus_settings()
-            _render_bias_penalty_settings()
+        # 使用fragment渲染参数设置，避免全页刷新
+        _render_param_settings()
         
         st.markdown("---")
         _render_file_upload()
@@ -134,36 +100,58 @@ def _render_interval_settings():
             # 删除按钮(保留至少1个区间)
             can_delete = len(st.session_state.rank_intervals) > 1
             if st.button("🗑️", key=f"del_{interval_id}", disabled=st.session_state.analysis_started or not can_delete):
-                _save_interval_values()  # 先保存其他区间的值
-                st.session_state.interval_to_delete = interval_id
-                st.rerun()
+                # 操作锁避免重复
+                if not st.session_state.get('_operation_lock', False):
+                    st.session_state._operation_lock = True
+                    _save_interval_values()  # 先保存其他区间的值
+                    # 立即删除
+                    st.session_state.rank_intervals = [
+                        iv for iv in st.session_state.rank_intervals if iv["id"] != interval_id
+                    ]
+                    # 清理废弃的key
+                    keys_to_delete = [k for k in st.session_state.keys() 
+                                     if k.startswith(f"start_{interval_id}") or 
+                                        k.startswith(f"end_{interval_id}") or 
+                                        k.startswith(f"weight_{interval_id}") or 
+                                        k.startswith(f"del_{interval_id}")]
+                    for key in keys_to_delete:
+                        del st.session_state[key]
+                    st.session_state.param_expander_expanded = True
+                    time.sleep(0.05)  # 微延迟减少闪烁感
+                    st.session_state._operation_lock = False
+                    st.rerun()
     
     # 添加新区间按钮
     if not st.session_state.analysis_started:
         if st.button("➕ 添加区间", key="add_interval"):
-            # 先保存当前所有输入框的值到区间数据
-            _save_interval_values()
-            
-            # 在末尾添加新区间
-            if len(st.session_state.rank_intervals) > 0:
-                last_interval = st.session_state.rank_intervals[-1]
-                new_start = last_interval["end"] + 1
-                new_end = new_start + 50
-            else:
-                new_start = 0
-                new_end = 50
-            
-            new_id = st.session_state.next_interval_id
-            st.session_state.next_interval_id += 1
-            
-            st.session_state.rank_intervals.append({
-                "id": new_id,
-                "start": new_start,
-                "end": new_end,
-                "weight": 1.0
-            })
-            st.session_state.param_expander_expanded = True  # 保持展开
-            st.rerun()
+            # 操作锁避免重复
+            if not st.session_state.get('_operation_lock', False):
+                st.session_state._operation_lock = True
+                # 先保存当前所有输入框的值到区间数据
+                _save_interval_values()
+                
+                # 在末尾添加新区间
+                if len(st.session_state.rank_intervals) > 0:
+                    last_interval = st.session_state.rank_intervals[-1]
+                    new_start = last_interval["end"] + 1
+                    new_end = new_start + 50
+                else:
+                    new_start = 0
+                    new_end = 50
+                
+                new_id = st.session_state.next_interval_id
+                st.session_state.next_interval_id += 1
+                
+                st.session_state.rank_intervals.append({
+                    "id": new_id,
+                    "start": new_start,
+                    "end": new_end,
+                    "weight": 1.0
+                })
+                st.session_state.param_expander_expanded = True
+                time.sleep(0.05)  # 微延迟减少闪烁感
+                st.session_state._operation_lock = False
+                st.rerun()
 
 
 def _render_line_and_bonus_settings():
@@ -197,29 +185,50 @@ def _render_rank_bonus_settings():
             st.write("")  # 空行对齐
             # 删除按钮(保留至少1个奖励)
             if st.button("🗑️", key=f"del_bonus_{bonus_id}", disabled=st.session_state.analysis_started or len(st.session_state.rank_bonuses) <= 1):
-                _save_bonus_values()  # 先保存其他奖励的值
-                st.session_state.bonus_to_delete = bonus_id
-                st.rerun()
+                # 操作锁避免重复
+                if not st.session_state.get('_operation_lock', False):
+                    st.session_state._operation_lock = True
+                    _save_bonus_values()  # 先保存其他奖励的值
+                    # 立即删除
+                    st.session_state.rank_bonuses = [
+                        b for b in st.session_state.rank_bonuses if b["id"] != bonus_id
+                    ]
+                    # 清理废弃的key
+                    keys_to_delete = [k for k in st.session_state.keys() 
+                                     if k.startswith(f"bonus_thresh_{bonus_id}") or 
+                                        k.startswith(f"bonus_val_{bonus_id}") or 
+                                        k.startswith(f"del_bonus_{bonus_id}")]
+                    for key in keys_to_delete:
+                        del st.session_state[key]
+                    st.session_state.param_expander_expanded = True
+                    time.sleep(0.05)  # 微延迟减少闪烁感
+                    st.session_state._operation_lock = False
+                    st.rerun()
     
     # 添加新排名奖励按钮
     if not st.session_state.analysis_started:
         if st.button("➕ 添加排名奖励", key="add_bonus"):
-            # 先保存当前所有输入框的值
-            _save_bonus_values()
-            
-            # 默认新奖励阈值为最后一个+10
-            last_threshold = st.session_state.rank_bonuses[-1]["threshold"] if st.session_state.rank_bonuses else 0
-            
-            new_id = st.session_state.next_bonus_id
-            st.session_state.next_bonus_id += 1
-            
-            st.session_state.rank_bonuses.append({
-                "id": new_id,
-                "threshold": last_threshold + 10,
-                "bonus": 5
-            })
-            st.session_state.param_expander_expanded = True  # 保持展开
-            st.rerun()
+            # 操作锁避免重复
+            if not st.session_state.get('_operation_lock', False):
+                st.session_state._operation_lock = True
+                # 先保存当前所有输入框的值
+                _save_bonus_values()
+                
+                # 默认新奖励阈值为最后一个+10
+                last_threshold = st.session_state.rank_bonuses[-1]["threshold"] if st.session_state.rank_bonuses else 0
+                
+                new_id = st.session_state.next_bonus_id
+                st.session_state.next_bonus_id += 1
+                
+                st.session_state.rank_bonuses.append({
+                    "id": new_id,
+                    "threshold": last_threshold + 10,
+                    "bonus": 5
+                })
+                st.session_state.param_expander_expanded = True
+                time.sleep(0.05)  # 微延迟减少闪烁感
+                st.session_state._operation_lock = False
+                st.rerun()
 
 
 def _render_chain_bonus_settings():
