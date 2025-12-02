@@ -246,9 +246,12 @@ def process_data():
         else:
             st.error(f"❌ 数据格式错误！当前列数：{col_count}\\n\\n支持格式：\\n- 2列（姓名、排名）\\n- 3列（姓名、排名、总分）\\n- 9列（姓名、排名、总分、6科成绩）\\n- 22列（姓名、总分+年级排名+集团排名、6科各3列）")
             st.stop()
+        
+        # 创建空的df_all作为基础
+        df_all = pd.DataFrame(columns=["姓名"])
     elif df_all is not None and len(all_dfs) > 0:
         # 如果有历史总表，新文件格式应该与历史总表一致
-        # 但不需要重新推断has_subjects和has_score，因为已经从历史总表推断过了
+        # has_subjects和has_score已经从历史总表推断过了，保持不变
         pass
     
     # 检查所有新文件格式是否一致
@@ -305,7 +308,8 @@ def process_data():
         df_renamed = df.rename(columns=rename_dict)
         
         # 合并数据
-        if df_all is None:
+        if df_all is None or df_all.empty or len(df_all.columns) == 1:
+            # df_all为空或只有姓名列，直接使用新数据
             df_all = df_renamed
         else:
             # 检查是否有重复列名
