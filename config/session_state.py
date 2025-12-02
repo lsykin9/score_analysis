@@ -97,6 +97,14 @@ def initialize_session_state():
         ]
         st.session_state.next_score_bonus_id = 7
 
+    # 动态偏科扣分列表
+    if 'bias_penalties' not in st.session_state:
+        st.session_state.bias_penalties = [
+            {"id": 0, "level": "轻微", "penalty": 5},
+            {"id": 1, "level": "明显", "penalty": 15},
+            {"id": 2, "level": "严重", "penalty": 30}
+        ]
+
     # 默认参数配置
     if 'config_params' not in st.session_state:
         st.session_state.config_params = {
