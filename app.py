@@ -16,7 +16,7 @@ import glob
 from config.session_state import initialize_session_state
 
 # 导入组件
-from components.sidebar import render_sidebar
+from components.sidebar import render_sidebar, _auto_load_config
 
 # 导入工具
 from utils.data_processor import process_data
@@ -170,6 +170,9 @@ st.markdown("---")
 # 初始化 session state
 initialize_session_state()
 
+# 自动加载保存的配置（仅在首次加载时）
+_auto_load_config()
+
 # 渲染侧边栏
 render_sidebar()
 
@@ -246,8 +249,8 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 进步分析", 
     "🎯 偏科检测", 
     "👤 学生详情", 
-    "💾 导出结果",
-    "🔍 得分详情"
+    "🔍 得分详情",
+    "💾 导出结果"
 ])
 
 # Tab 1: 总览
@@ -779,51 +782,13 @@ with tab4:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-# Tab 5: 导出结果
+# Tab 5: 得分详情
 with tab5:
-    st.header("💾 导出结果")
+    st.header("🔍 学生得分详情")
     
-    # 导出总表
-    st.subheader("1. 导出成绩总表（仅原始数据）")
-    st.info("💡 此文件只包含原始成绩数据，可作为历史总表上传继续分析")
-    
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # 只导出原始成绩数据（df_all），不包含计算的得分
-        df_all.to_excel(writer, sheet_name='成绩总表', index=False)
-    
-    st.download_button(
-        label="📥 下载成绩总表（原始数据）",
-        data=output.getvalue(),
-        file_name="成绩总表.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    
-    st.markdown("---")
-    
-    # 导出完整分析结果
-    st.subheader("2. 导出完整分析结果")
-    st.info("💡 此文件包含原始数据、得分明细和偏科分析，用于查看完整结果")
-    
-    output2 = BytesIO()
-    with pd.ExcelWriter(output2, engine='openpyxl') as writer:
-        df_final.to_excel(writer, sheet_name='完整结果', index=False)
-        df_score.to_excel(writer, sheet_name='得分明细', index=False)
-        if has_subjects and df_bias is not None:
-            df_bias.to_excel(writer, sheet_name='偏科检测', index=False)
-    
-    st.download_button(
-        label="📥 下载完整分析结果",
-        data=output2.getvalue(),
-        file_name="完整分析结果.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-# Tab 6: 得分详情
-with tab6:
-    st.header("🔍 得分详情（调试）")
-    
-    st.info("💡 此页面显示每个学生的详细得分计算过程，帮助理解评分逻辑")
+    st.markdown("""
+    查看每位学生的详细得分构成，包括各项加分和扣分的具体计算过程。
+    """)
     
     # 从session_state获取数据
     rank_cols = st.session_state.get('rank_cols', [])
@@ -833,13 +798,14 @@ with tab6:
     exam_labels = st.session_state.get('exam_labels', {})
     
     # 选择学生
-    debug_student = st.selectbox("选择学生查看详细得分", df_all["姓名"].tolist(), key="debug_student")
+    selected_student = st.selectbox("选择学生", df_all["姓名"].tolist(), key="student_detail_select")
     
-    if debug_student:
-        student_data = df_all[df_all["姓名"] == debug_student].iloc[0]
-        student_score = df_score[df_score["姓名"] == debug_student].iloc[0]
+    if selected_student:
+        student_data = df_all[df_all["姓名"] == selected_student].iloc[0]
+        student_score = df_score[df_score["姓名"] == selected_student].iloc[0]
         
-        st.subheader(f"📋 {debug_student} 的得分明细")
+        st.markdown(f"## 📋 {selected_student}")
+        st.markdown("---")
         
         # 筛选出总分的年级排名列（用于计算进步得分的列）
         total_rank_cols = [col for col in rank_cols 
@@ -875,11 +841,7 @@ with tab6:
             st.table(pd.DataFrame(rank_data))
         
         # 2. 区间进步得分
-        st.markdown("### 2️⃣ 区间进步得分计算")
-        
-        # 显示实际使用的排名列
-        st.write(f"**使用的排名列数量**: {len(total_rank_cols)}")
-        st.write(f"**排名列**: {total_rank_cols}")
+        st.markdown("### 2️⃣ 区间进步得分")
         
         if len(total_rank_cols) >= 2:
             # 重新应用缺考检测逻辑构建ranks数组
@@ -911,8 +873,6 @@ with tab6:
                 else:
                     ranks.append(int(rank_val))
             
-            st.write(f"**排名序列**: {ranks}")
-            
             # 计算每次进步得分
             from score_analysis_v0_1 import progress_score
             from utils.data_processor import process_data
@@ -922,21 +882,51 @@ with tab6:
             for interval in st.session_state.rank_intervals:
                 weights.append((int(interval["start"]), int(interval["end"]), float(interval["weight"])))
             
+            # 只显示最近一次进步（与实际计算逻辑一致）
+            # 找到最近两次有效排名
+            _cur = ranks[-1] if ranks[-1] > 0 else 0
+            _pre = 0
+            for i in range(len(ranks) - 2, -1, -1):
+                if ranks[i] > 0:
+                    _pre = ranks[i]
+                    break
+            
             progress_details = []
-            for i in range(1, len(ranks)):
-                before = int(ranks[i-1]) if ranks[i-1] > 0 else 0
-                now = int(ranks[i]) if ranks[i] > 0 else 0
-                if before > 0 and now > 0 and now < before:
-                    score = progress_score(before, now, weights)
+            if _cur > 0 and _pre > 0:
+                if _cur < _pre:  # 有进步
+                    score = progress_score(_pre, _cur, weights)
+                    # 找到对应的考试编号
+                    cur_exam_idx = len(ranks)  # 最后一次考试
+                    pre_exam_idx = 0
+                    for i in range(len(ranks) - 2, -1, -1):
+                        if ranks[i] > 0:
+                            pre_exam_idx = i + 1
+                            break
+                    
                     progress_details.append({
-                        "对比": f"{exam_labels.get(i, f'考试{i}')} vs {exam_labels.get(i+1, f'考试{i+1}')}",
-                        "排名变化": f"{before} → {now}",
-                        "进步名次": before - now,
+                        "对比": f"{exam_labels.get(pre_exam_idx, f'考试{pre_exam_idx}')} vs {exam_labels.get(cur_exam_idx, f'考试{cur_exam_idx}')}",
+                        "排名变化": f"{_pre} → {_cur}",
+                        "进步名次": _pre - _cur,
                         "得分": f"{score:.1f}"
+                    })
+                else:  # 退步或持平
+                    cur_exam_idx = len(ranks)
+                    pre_exam_idx = 0
+                    for i in range(len(ranks) - 2, -1, -1):
+                        if ranks[i] > 0:
+                            pre_exam_idx = i + 1
+                            break
+                    
+                    progress_details.append({
+                        "对比": f"{exam_labels.get(pre_exam_idx, f'考试{pre_exam_idx}')} vs {exam_labels.get(cur_exam_idx, f'考试{cur_exam_idx}')}",
+                        "排名变化": f"{_pre} → {_cur}",
+                        "进步名次": _pre - _cur,
+                        "得分": "0.0"
                     })
             
             if progress_details:
                 st.table(pd.DataFrame(progress_details))
+                st.info("💡 区间进步得分只计算最近一次有效考试的进步")
             else:
                 st.write("无区间进步")
             st.write(f"**总区间进步得分**: {student_score['区间进步得分']:.1f}")
@@ -972,8 +962,8 @@ with tab6:
             rank_config = pd.DataFrame(st.session_state.rank_bonuses)[["threshold", "bonus"]]
             rank_config.columns = ["排名阈值", "奖励分数"]
             st.table(rank_config)
-            st.write(f"**A线**: {st.session_state.config_params.get('A线（排名）', 430)}，奖励: {st.session_state.config_params.get('A线过线奖励', 5)}")
-            st.write(f"**B线**: {st.session_state.config_params.get('B线（排名）', 500)}，奖励: {st.session_state.config_params.get('B线过线奖励', 3)}")
+            st.write(f"**A线**: 排名≤{st.session_state.config_params.get('A线（排名）', 430)}名，奖励: {st.session_state.config_params.get('A线过线奖励', 5)}分")
+            st.write(f"**B线**: 排名≤{st.session_state.config_params.get('B线（排名）', 500)}名，奖励: {st.session_state.config_params.get('B线过线奖励', 3)}分")
         
         # 5. 集团排名加分
         if group_rank_cols and len(group_rank_cols) > 0:
@@ -1015,7 +1005,7 @@ with tab6:
         # 7. 偏科扣分
         if has_subjects:
             st.markdown("### 7️⃣ 偏科扣分")
-            student_bias = df_bias[df_bias["姓名"] == debug_student]
+            student_bias = df_bias[df_bias["姓名"] == selected_student]
             if not student_bias.empty:
                 bias_info = student_bias.iloc[0]
                 st.write(f"**偏科等级**: {bias_info['偏科等级']}")
@@ -1048,3 +1038,43 @@ with tab6:
         with col2:
             st.metric("总得分", f"{student_score['总得分']:.1f}", 
                      delta=None if student_score['总得分'] == 0 else f"+{student_score['总得分']:.1f}")
+
+# Tab 6: 导出结果
+with tab6:
+    st.header("💾 导出结果")
+    
+    # 导出总表
+    st.subheader("1. 导出成绩总表（仅原始数据）")
+    st.info("💡 此文件只包含原始成绩数据，可作为历史总表上传继续分析")
+    
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # 只导出原始成绩数据（df_all），不包含计算的得分
+        df_all.to_excel(writer, sheet_name='成绩总表', index=False)
+    
+    st.download_button(
+        label="📥 下载成绩总表（原始数据）",
+        data=output.getvalue(),
+        file_name="成绩总表.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+    st.markdown("---")
+    
+    # 导出完整分析结果
+    st.subheader("2. 导出完整分析结果")
+    st.info("💡 此文件包含原始数据、得分明细和偏科分析，用于查看完整结果")
+    
+    output2 = BytesIO()
+    with pd.ExcelWriter(output2, engine='openpyxl') as writer:
+        df_final.to_excel(writer, sheet_name='完整结果', index=False)
+        df_score.to_excel(writer, sheet_name='得分明细', index=False)
+        if has_subjects and df_bias is not None:
+            df_bias.to_excel(writer, sheet_name='偏科检测', index=False)
+    
+    st.download_button(
+        label="📥 下载完整分析结果",
+        data=output2.getvalue(),
+        file_name="完整分析结果.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )

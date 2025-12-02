@@ -8,6 +8,106 @@ import io
 import time
 import os
 import glob
+import json
+from pathlib import Path
+
+
+# 配置文件路径
+CONFIG_FILE = Path("config/user_settings.json")
+
+
+def _save_config():
+    """保存当前配置到文件"""
+    try:
+        # 创建配置目录
+        CONFIG_FILE.parent.mkdir(exist_ok=True)
+        
+        # 收集所有配置参数
+        config = {
+            "config_params": st.session_state.config_params,
+            "rank_intervals": st.session_state.rank_intervals,
+            "rank_bonuses": st.session_state.rank_bonuses,
+            "group_rank_bonuses": st.session_state.group_rank_bonuses,
+            "chain_bonuses": st.session_state.chain_bonuses,
+            "score_bonuses": st.session_state.score_bonuses,
+            "bias_penalties": st.session_state.bias_penalties,
+        }
+        
+        # 保存到JSON文件
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        
+        st.success("✅ 配置已保存！下次打开将自动加载")
+    except Exception as e:
+        st.error(f"❌ 保存配置失败: {str(e)}")
+
+
+def _load_config():
+    """从文件加载配置"""
+    try:
+        if not CONFIG_FILE.exists():
+            st.warning("⚠️ 未找到保存的配置文件")
+            return False
+        
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # 恢复配置到session_state
+        st.session_state.config_params = config.get("config_params", {})
+        st.session_state.rank_intervals = config.get("rank_intervals", [])
+        st.session_state.rank_bonuses = config.get("rank_bonuses", [])
+        st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
+        st.session_state.chain_bonuses = config.get("chain_bonuses", [])
+        st.session_state.score_bonuses = config.get("score_bonuses", [])
+        st.session_state.bias_penalties = config.get("bias_penalties", [])
+        
+        st.success("✅ 配置已加载！")
+        st.rerun()
+        return True
+    except Exception as e:
+        st.error(f"❌ 加载配置失败: {str(e)}")
+        return False
+
+
+def _auto_load_config():
+    """自动加载保存的配置（在应用启动时调用）"""
+    if CONFIG_FILE.exists() and 'config_loaded' not in st.session_state:
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # 恢复配置到session_state
+            st.session_state.config_params = config.get("config_params", {})
+            st.session_state.rank_intervals = config.get("rank_intervals", [])
+            st.session_state.rank_bonuses = config.get("rank_bonuses", [])
+            st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
+            st.session_state.chain_bonuses = config.get("chain_bonuses", [])
+            st.session_state.score_bonuses = config.get("score_bonuses", [])
+            st.session_state.bias_penalties = config.get("bias_penalties", [])
+            
+            st.session_state.config_loaded = True
+        except:
+            pass
+
+
+def _reset_to_default():
+    """重置为默认配置"""
+    from utils.default_config import get_default_config
+    
+    # 获取默认配置
+    default = get_default_config()
+    
+    # 重置所有配置
+    st.session_state.config_params = default["config_params"]
+    st.session_state.rank_intervals = default["rank_intervals"]
+    st.session_state.rank_bonuses = default["rank_bonuses"]
+    st.session_state.group_rank_bonuses = default["group_rank_bonuses"]
+    st.session_state.chain_bonuses = default["chain_bonuses"]
+    st.session_state.score_bonuses = default["score_bonuses"]
+    st.session_state.bias_penalties = default["bias_penalties"]
+    
+    st.success("✅ 已恢复默认配置！")
+    st.rerun()
 
 
 @st.fragment
@@ -21,6 +121,20 @@ def _render_param_settings():
     expander = st.expander("📊 评分参数设置", expanded=st.session_state.param_expander_expanded)
     
     with expander:
+        # 添加保存/加载配置按钮
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("💾 保存配置", use_container_width=True):
+                _save_config()
+        with col2:
+            if st.button("📂 加载配置", use_container_width=True):
+                _load_config()
+        with col3:
+            if st.button("🔄 恢复默认", use_container_width=True):
+                _reset_to_default()
+        
+        st.markdown("---")
+        
         _render_interval_settings()
         _render_line_and_bonus_settings()
         _render_rank_bonus_settings()
@@ -817,6 +931,8 @@ def _render_usage_info():
     
     💡 **提示**
     - 参数配置可在顶部「评分参数设置」中调整
+    - 点击「💾 保存配置」将记住你的参数设置
+    - 下次打开系统会自动加载保存的配置
     - 如果上传了历史总表，新成绩将接续在后面
     - 文件顺序会自动标记（第N次）
     - 可以随时删除已上传的文件重新上传

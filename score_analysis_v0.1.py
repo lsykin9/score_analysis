@@ -82,10 +82,21 @@ def read_config(path="参数配置.xlsx", config_dict=None):
 
 # === 区间加权进步得分 ===
 def progress_score(before, now, weights):
-    if before == 0 or now == 0 or now > before:
+    """
+    计算区间进步得分
+    before: 之前的排名
+    now: 现在的排名
+    weights: 区间权重配置 [(start, end, weight), ...]
+    
+    进步得分 = 进步跨越的每个排名的权重之和
+    注意：不包括当前排名，只计算进步的部分
+    例如：44→34 进步10名，计算 35-44 共10个排名
+    """
+    if before == 0 or now == 0 or now >= before:
         return 0.0
     score = 0.0
-    for r in range(now, before + 1):
+    # 从 now+1 开始，不包括当前排名now
+    for r in range(now + 1, before + 1):
         for start, end, w in weights:
             if start <= r <= end:
                 score += w
@@ -141,7 +152,25 @@ def group_ranking_bonus(group_rank, config):
 
 # === 连续进步加分（基于进步次数） ===
 def chain_bonus_score(chain_length, config):
-    return sum([config["chain_bonus"].get(i, 0) for i in range(1, chain_length + 1)])
+    """
+    根据连续进步次数计算加分
+    只返回当前连续次数对应的奖励，不累加之前的
+    
+    例如：连续进步2次，只加2次对应的8分，不加1次的5分
+    """
+    if chain_length == 0:
+        return 0
+    
+    # 找到连续次数对应的奖励
+    # 如果超过最大配置次数，使用最大次数的奖励
+    bonus = 0
+    max_times = 0
+    for times, b in config["chain_bonus"].items():
+        if chain_length >= times and times > max_times:
+            max_times = times
+            bonus = b
+    
+    return bonus
 
 # === 总分奖励加分 ===
 def total_score_bonus(total_score, config):

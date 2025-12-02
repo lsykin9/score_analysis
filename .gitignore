@@ -29,6 +29,9 @@ wheels/
 最终得分结果.xlsx
 最新成绩.xlsx
 
+# User configuration
+config/user_settings.json
+
 # IDE
 .vscode/
 .idea/
