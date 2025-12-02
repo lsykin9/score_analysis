@@ -648,12 +648,12 @@ def _render_file_upload():
     """渲染文件上传区域"""
     st.header("📁 文件上传")
     
-    # 历史成绩总表上传（可选）
+    # 历史总表上传
     history_file = st.file_uploader(
         "1️⃣ 上传历史成绩总表（可选）",
         type=['xlsx'],
         help="如果已有历史数据，可以上传成绩总表.xlsx，新成绩将接续在后面",
-        key="history_uploader"
+        key=f"history_uploader_{st.session_state.uploader_key}"
     )
     
     # 保存历史文件到 session state 并分析次数
@@ -760,6 +760,7 @@ def _render_control_buttons():
             st.session_state.analysis_started = False
             st.session_state.history_file_content = None
             st.session_state.history_exam_count = 0
+            st.session_state.uploader_key += 1  # 增加key值以重置file_uploader
             # 注意: 不清除 config_params，保留用户的参数设置
             st.rerun()
 

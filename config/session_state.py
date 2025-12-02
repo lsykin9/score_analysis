@@ -17,6 +17,8 @@ def initialize_session_state():
         st.session_state.history_file_content = None
     if 'history_exam_count' not in st.session_state:
         st.session_state.history_exam_count = 0
+    if 'uploader_key' not in st.session_state:
+        st.session_state.uploader_key = 0  # 用于重置file_uploader
 
     # 删除标记
     if 'interval_to_delete' not in st.session_state:
