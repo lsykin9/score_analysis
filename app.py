@@ -16,7 +16,7 @@ import glob
 from config.session_state import initialize_session_state
 
 # 导入组件
-from components.sidebar import render_sidebar, _auto_load_config
+from components.sidebar import render_sidebar, auto_load_config
 
 # 导入工具
 from utils.data_processor import process_data
@@ -171,7 +171,7 @@ st.markdown("---")
 initialize_session_state()
 
 # 自动加载保存的配置（仅在首次加载时）
-_auto_load_config()
+auto_load_config()
 
 # 渲染侧边栏
 render_sidebar()
