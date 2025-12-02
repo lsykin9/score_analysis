@@ -466,7 +466,7 @@ with tab3:
         
         if len(biased_students) > 0:
             st.dataframe(
-                biased_students.style.background_gradient(subset=['标准差'], cmap='YlOrRd'),
+                biased_students.style.background_gradient(subset=['排名标准差'], cmap='YlOrRd'),
                 use_container_width=True
             )
         else:
@@ -527,9 +527,13 @@ with tab4:
             
             subject_scores = {}
             for subj in subjects:
-                subj_cols = [col for col in df_all.columns if col.startswith(f"{subj}_")]
-                if subj_cols:
-                    subject_scores[subj] = student_data[subj_cols[-1]]
+                # 只提取分数列，排除年级排名和集团排名列
+                subj_score_cols = [col for col in df_all.columns 
+                                  if col.startswith(f"{subj}_") 
+                                  and "年级排名" not in col 
+                                  and "集团排名" not in col]
+                if subj_score_cols:
+                    subject_scores[subj] = student_data[subj_score_cols[-1]]
             
             fig = px.bar(
                 x=list(subject_scores.keys()),
@@ -549,16 +553,16 @@ with tab5:
     st.header("💾 导出结果")
     
     # 导出总表
-    st.subheader("1. 导出成绩总表")
+    st.subheader("1. 导出成绩总表（仅原始数据）")
+    st.info("💡 此文件只包含原始成绩数据，可作为历史总表上传继续分析")
     
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_final.to_excel(writer, sheet_name='成绩总表', index=False)
-        if has_subjects and df_bias is not None:
-            df_bias.to_excel(writer, sheet_name='偏科检测', index=False)
+        # 只导出原始成绩数据（df_all），不包含计算的得分
+        df_all.to_excel(writer, sheet_name='成绩总表', index=False)
     
     st.download_button(
-        label="📥 下载成绩总表",
+        label="📥 下载成绩总表（原始数据）",
         data=output.getvalue(),
         file_name="成绩总表.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -566,16 +570,20 @@ with tab5:
     
     st.markdown("---")
     
-    # 导出各项明细
-    st.subheader("2. 导出各项得分明细")
+    # 导出完整分析结果
+    st.subheader("2. 导出完整分析结果")
+    st.info("💡 此文件包含原始数据、得分明细和偏科分析，用于查看完整结果")
     
     output2 = BytesIO()
     with pd.ExcelWriter(output2, engine='openpyxl') as writer:
+        df_final.to_excel(writer, sheet_name='完整结果', index=False)
         df_score.to_excel(writer, sheet_name='得分明细', index=False)
+        if has_subjects and df_bias is not None:
+            df_bias.to_excel(writer, sheet_name='偏科检测', index=False)
     
     st.download_button(
-        label="📥 下载得分明细",
+        label="📥 下载完整分析结果",
         data=output2.getvalue(),
-        file_name="得分明细.xlsx",
+        file_name="完整分析结果.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )

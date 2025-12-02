@@ -150,22 +150,30 @@ def process_data():
     if st.session_state.history_file_content is not None:
         with open("成绩总表_temp.xlsx", "wb") as f:
             f.write(st.session_state.history_file_content)
-        df_all = pd.read_excel("成绩总表_temp.xlsx")
+        
+        # 检查是否有说明行需要跳过
+        df_temp = pd.read_excel("成绩总表_temp.xlsx", nrows=1)
+        if df_temp.iloc[0, 0] and isinstance(df_temp.iloc[0, 0], str) and "说明" in str(df_temp.iloc[0, 0]):
+            df_all = pd.read_excel("成绩总表_temp.xlsx", skiprows=1)
+        else:
+            df_all = pd.read_excel("成绩总表_temp.xlsx")
         
         # 检查历史总表的格式
-        rank_cols_history = [col for col in df_all.columns if col.startswith("排名_")]
+        rank_cols_history = [col for col in df_all.columns if col.startswith("排名_") or col.startswith("年级排名_")]
         score_cols_history = [col for col in df_all.columns if col.startswith("总分_")]
         
         # 推断格式
         if len(score_cols_history) > 0:
-            # 检查是否有科目列
-            subject_cols_check = [col for col in df_all.columns if any(col.startswith(f"{subj}_") for subj in subjects)]
+            has_score = True
+            # 检查是否有科目列（排除年级排名和集团排名列）
+            subject_cols_check = [col for col in df_all.columns 
+                                 if any(col.startswith(f"{subj}_") for subj in subjects)
+                                 and "年级排名" not in col
+                                 and "集团排名" not in col]
             if len(subject_cols_check) > 0:
                 has_subjects = True
-                has_score = True
             else:
                 has_subjects = False
-                has_score = True
         else:
             has_subjects = False
             has_score = False
@@ -185,8 +193,13 @@ def process_data():
             with open(temp_filename, "wb") as f:
                 f.write(file_info['content'])
             
-            # 读取成绩
-            df = pd.read_excel(temp_filename)
+            # 读取成绩 - 检查是否有说明行需要跳过
+            df_temp = pd.read_excel(temp_filename, nrows=1)
+            # 如果第一行第一列包含"说明"字样，则跳过第一行
+            if df_temp.iloc[0, 0] and isinstance(df_temp.iloc[0, 0], str) and "说明" in str(df_temp.iloc[0, 0]):
+                df = pd.read_excel(temp_filename, skiprows=1)
+            else:
+                df = pd.read_excel(temp_filename)
             all_dfs.append((exam_num, exam_label, df))
     
     # 如果没有历史总表,需要从新文件推断格式
@@ -216,6 +229,10 @@ def process_data():
         else:
             st.error(f"❌ 数据格式错误！当前列数：{col_count}\\n\\n支持格式：\\n- 2列（姓名、排名）\\n- 3列（姓名、排名、总分）\\n- 9列（姓名、排名、总分、6科成绩）\\n- 22列（姓名、总分+年级排名+集团排名、6科各3列）")
             st.stop()
+    elif df_all is not None and len(all_dfs) > 0:
+        # 如果有历史总表，新文件格式应该与历史总表一致
+        # 但不需要重新推断has_subjects和has_score，因为已经从历史总表推断过了
+        pass
     
     # 检查所有新文件格式是否一致
     if len(all_dfs) > 0:
@@ -229,39 +246,44 @@ def process_data():
     for exam_num, exam_label, df in all_dfs:
         # 设置基础列名
         col_count = df.shape[1]
+        
         if col_count == 2:
             df.columns = ["姓名", "本次排名"]
+            rename_dict = {"本次排名": f"排名_{exam_label}"}
+            
         elif col_count == 3:
             df.columns = ["姓名", "本次排名", "本次总分"]
+            rename_dict = {
+                "本次排名": f"排名_{exam_label}",
+                "本次总分": f"总分_{exam_label}"
+            }
+            
         elif col_count == 9:
             df.columns = ["姓名", "本次排名", "本次总分"] + subjects
-        elif col_count == 22:
-            # 新格式：姓名 + 总分(分数、年级排名、集团排名) + 6科(每科3列)
-            new_cols = ["姓名", "本次总分", "本次年级排名", "本次集团排名"]
-            for subj in subjects:
-                new_cols.extend([f"{subj}_分数", f"{subj}_年级排名", f"{subj}_集团排名"])
-            df.columns = new_cols
-        
-        # 重命名为自定义标签
-        if col_count == 22:
-            # 新格式重命名
             rename_dict = {
-                "本次年级排名": f"年级排名_{exam_label}",
-                "本次集团排名": f"集团排名_{exam_label}",
+                "本次排名": f"排名_{exam_label}",
                 "本次总分": f"总分_{exam_label}"
             }
             for subj in subjects:
-                rename_dict[f"{subj}_分数"] = f"{subj}_{exam_label}"
-                rename_dict[f"{subj}_年级排名"] = f"{subj}_年级排名_{exam_label}"
-                rename_dict[f"{subj}_集团排名"] = f"{subj}_集团排名_{exam_label}"
-        else:
-            # 旧格式重命名
-            rename_dict = {"本次排名": f"排名_{exam_label}"}
-            if has_score:
-                rename_dict["本次总分"] = f"总分_{exam_label}"
-        if has_subjects:
+                rename_dict[subj] = f"{subj}_{exam_label}"
+                
+        elif col_count == 22:
+            # 新格式：姓名 + 总分(分数、年级排名、集团排名) + 6科(每科3列)
+            # 实际列名格式：姓名、总分、总分年级排名、总分集团排名、语文、语文年级排名、语文集团排名...
+            expected_cols = ["姓名", "总分", "总分年级排名", "总分集团排名"]
+            for subj in subjects:
+                expected_cols.extend([subj, f"{subj}年级排名", f"{subj}集团排名"])
+            
+            # 重命名为带考试标签的格式
+            rename_dict = {
+                "总分": f"总分_{exam_label}",
+                "总分年级排名": f"年级排名_{exam_label}",
+                "总分集团排名": f"集团排名_{exam_label}"
+            }
             for subj in subjects:
                 rename_dict[subj] = f"{subj}_{exam_label}"
+                rename_dict[f"{subj}年级排名"] = f"{subj}_年级排名_{exam_label}"
+                rename_dict[f"{subj}集团排名"] = f"{subj}_集团排名_{exam_label}"
         
         df_renamed = df.rename(columns=rename_dict)
         
@@ -313,13 +335,20 @@ def process_data():
     if has_subjects:
         subject_cols_dict = {}
         for subj in subjects:
-            # 优先使用带"分数"的列，如果没有则使用旧格式
-            subj_score_cols = [col for col in df_all.columns if col.startswith(f"{subj}_") and not ("年级排名" in col or "集团排名" in col)]
+            # 查找该科目的分数列（排除年级排名和集团排名列）
+            subj_score_cols = [col for col in df_all.columns 
+                              if col.startswith(f"{subj}_") 
+                              and "年级排名" not in col 
+                              and "集团排名" not in col]
             if subj_score_cols:
                 subject_cols_dict[subj] = subj_score_cols[-1]
     
-    for _, row in df_all.iterrows():
+    for idx, row in df_all.iterrows():
         name = row["姓名"]
+        
+        # 跳过非字符串姓名（可能是表头残留）
+        if not isinstance(name, str) or pd.isna(name):
+            continue
         
         # 检测缺考：检查最新一次考试是否有科目缺考
         is_absent = False
@@ -334,10 +363,16 @@ def process_data():
         ranks = []
         for col in rank_cols:
             val = row[col]
+            # 检查val是否为字符串（可能是表头）
+            if isinstance(val, str):
+                continue  # 跳过这一行
             if pd.isna(val) or val == 0:
                 ranks.append(0)
             else:
-                ranks.append(int(float(val)))
+                try:
+                    ranks.append(int(float(val)))
+                except (ValueError, TypeError):
+                    ranks.append(0)  # 转换失败时使用0
         
         chain_len = 0
         chain_progress = 0.0
@@ -428,18 +463,21 @@ def process_data():
             for subj, col in subject_cols_dict.items():
                 latest_scores[subj] = row[col]
             
-            # 构建各科排名字典（新格式）
+            # 构建各科排名字典（查找最新一次考试的年级排名）
             subject_ranks = {}
             for subj in subjects:
-                # 查找该科目的年级排名列
-                rank_col = f"{subj}_年级排名_{exam_labels.get(len(rank_cols), f'第{len(rank_cols)}次考试')}" if exam_labels else None
-                if rank_col and rank_col in df_all.columns:
-                    rank_val = row[rank_col]
+                # 查找该科目的所有年级排名列
+                subj_rank_cols = [col for col in df_all.columns 
+                                 if col.startswith(f"{subj}_年级排名_")]
+                if subj_rank_cols:
+                    # 取最后一次（最新）的排名
+                    latest_rank_col = subj_rank_cols[-1]
+                    rank_val = row[latest_rank_col]
                     if pd.notna(rank_val) and rank_val > 0:
                         subject_ranks[subj] = int(rank_val)
             
             # 调用偏科检测（传入排名和配置）
-            bias_info = detect_subject_bias(latest_scores, subjects, subject_ranks, cfg)
+            bias_info = detect_subject_bias(latest_scores, subjects, subject_ranks, config)
             bias_level = bias_info["偏科等级"]
             bias_deduct = bias_penalty_score(bias_level, config)
             
@@ -485,14 +523,16 @@ def process_data():
             penalty = bias_penalty_score(bias_info["偏科等级"], config)
             bias_results.append({
                 "姓名": name,
-                "标准差": bias_info["标准差"],
+                "排名标准差": bias_info.get("排名标准差", bias_info.get("标准差", 0)),
+                "最大排名差": bias_info.get("最大排名差", 0),
+                "相对离散度": bias_info.get("相对离散度", 0),
+                "平均排名": bias_info.get("平均排名", 0),
                 "偏科等级": bias_info["偏科等级"],
-                "平均标准化分": bias_info["平均标准化分"],
                 "最强科目": bias_info["最强科目"],
                 "最弱科目": bias_info["最弱科目"],
                 "扣分": penalty
             })
         df_bias = pd.DataFrame(bias_results)
-        df_bias = df_bias.sort_values(by="标准差", ascending=False)
+        df_bias = df_bias.sort_values(by="排名标准差", ascending=False)
     
     return df_all, df_score, df_final, df_bias, has_subjects, rank_cols, score_cols, subjects, bias_dict, exam_labels

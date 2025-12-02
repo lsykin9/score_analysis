@@ -661,8 +661,15 @@ def _render_file_upload():
         st.session_state.history_file_content = history_file.getvalue()
         # 分析历史文件有多少次考试
         try:
-            df_history = pd.read_excel(io.BytesIO(history_file.getvalue()))
-            rank_cols = [col for col in df_history.columns if col.startswith("排名_")]
+            # 检查是否有说明行需要跳过
+            df_temp = pd.read_excel(io.BytesIO(history_file.getvalue()), nrows=1)
+            if df_temp.iloc[0, 0] and isinstance(df_temp.iloc[0, 0], str) and "说明" in str(df_temp.iloc[0, 0]):
+                df_history = pd.read_excel(io.BytesIO(history_file.getvalue()), skiprows=1)
+            else:
+                df_history = pd.read_excel(io.BytesIO(history_file.getvalue()))
+            
+            # 同时检查旧格式（排名_）和新格式（年级排名_）
+            rank_cols = [col for col in df_history.columns if col.startswith("排名_") or col.startswith("年级排名_")]
             st.session_state.history_exam_count = len(rank_cols)
             st.success(f"✅ 历史总表已上传 (包含 {st.session_state.history_exam_count} 次考试)")
         except Exception as e:
