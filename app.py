@@ -164,7 +164,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 标题
-st.title("📊 学生成绩进步评分系统")
+st.title("📊 学生成绩进步评分系统（阿金专属）")
 st.markdown("---")
 
 # 初始化 session state
