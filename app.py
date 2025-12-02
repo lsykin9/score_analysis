@@ -211,6 +211,14 @@ if not st.session_state.analysis_started:
 try:
     df_all, df_score, df_final, df_bias, has_subjects, rank_cols, score_cols, subjects, bias_dict, exam_labels = process_data()
     
+    # 获取集团排名列
+    group_rank_cols = []
+    for col in df_all.columns:
+        if col.startswith("集团排名_"):
+            group_rank_cols.append(col)
+        elif "_集团排名_" in col:
+            group_rank_cols.append(col)
+    
     # 存储到session state
     st.session_state['df_all'] = df_all
     st.session_state['df_score'] = df_score
@@ -219,6 +227,7 @@ try:
     st.session_state['has_subjects'] = has_subjects
     st.session_state['rank_cols'] = rank_cols
     st.session_state['score_cols'] = score_cols
+    st.session_state['group_rank_cols'] = group_rank_cols
     st.session_state['subjects'] = subjects
     st.session_state['bias_dict'] = bias_dict
     st.session_state['exam_labels'] = exam_labels
@@ -232,12 +241,13 @@ except Exception as e:
     st.stop()
 
 # 主界面 - 标签页
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 总览", 
     "📈 进步分析", 
     "🎯 偏科检测", 
     "👤 学生详情", 
-    "💾 导出结果"
+    "💾 导出结果",
+    "🔍 得分详情"
 ])
 
 # Tab 1: 总览
@@ -309,8 +319,8 @@ with tab1:
     
     fig.update_traces(
         marker=dict(
-            color='rgba(255, 200, 120, 0.8)',
-            line=dict(color='rgba(0, 0, 0, 0.6)', width=0.5)
+            color='rgba(99, 110, 250, 0.7)',  # 专业的靛蓝色
+            line=dict(color='rgba(62, 68, 156, 0.9)', width=1.5)
         )
     )
     
@@ -372,43 +382,114 @@ with tab2:
     if len(rank_cols) < 2:
         st.info("💡 **提示**：当前只有 1 次考试数据，无法查看进步情况。\n\n请上传更多成绩文件后点击「重置」重新分析。")
     else:
-        # 进步趋势图
-        st.subheader("排名趋势（选择学生）")
+        # 选择查看的内容和排名类型
+        col1, col2, col3 = st.columns([2, 2, 3])
         
-        selected_students = st.multiselect(
-            "选择要对比的学生（最多5个）",
-            df_all["姓名"].tolist(),
-            default=df_all["姓名"].tolist()[:3]
-        )
+        with col1:
+            # 选择查看总分还是各科
+            if has_subjects:
+                view_options = ["总分"] + subjects
+            else:
+                view_options = ["总分"]
+            
+            selected_subject = st.selectbox(
+                "选择查看科目",
+                view_options,
+                index=0
+            )
         
-        if selected_students:
+        with col2:
+            # 选择年级排名还是集团排名
+            rank_type_options = ["年级排名"]
+            # 检查是否有集团排名数据
+            has_group_rank = any("集团排名" in col for col in df_all.columns)
+            if has_group_rank:
+                rank_type_options.append("集团排名")
+            
+            rank_type = st.selectbox(
+                "选择排名类型",
+                rank_type_options,
+                index=0
+            )
+        
+        with col3:
+            # 选择学生
+            selected_students = st.multiselect(
+                "选择要对比的学生（最多5个）",
+                df_all["姓名"].tolist(),
+                default=df_all["姓名"].tolist()[:3]
+            )
+        
+        # 根据选择提取对应的排名列
+        if selected_subject == "总分":
+            if rank_type == "年级排名":
+                # 查找总分年级排名列
+                target_cols = [col for col in df_all.columns if col.startswith("总分_年级排名_") or (col.startswith("年级排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
+            else:
+                # 查找总分集团排名列
+                target_cols = [col for col in df_all.columns if col.startswith("总分_集团排名_") or (col.startswith("集团排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
+        else:
+            # 各科排名
+            if rank_type == "年级排名":
+                target_cols = [col for col in df_all.columns if col.startswith(f"{selected_subject}_年级排名_")]
+            else:
+                target_cols = [col for col in df_all.columns if col.startswith(f"{selected_subject}_集团排名_")]
+        
+        if len(target_cols) < 2:
+            st.warning(f"⚠️ {selected_subject}的{rank_type}数据不足，需要至少2次考试数据")
+        elif selected_students:
+            st.subheader(f"📊 {selected_subject} - {rank_type}趋势")
+            
             fig = go.Figure()
             
             # 提取考试标签
             exam_display_names = []
-            for col in rank_cols:
-                label = col.replace("排名_", "")
+            for col in target_cols:
+                # 从列名中提取考试名称
+                if "_年级排名_" in col:
+                    label = col.split("_年级排名_")[-1]
+                elif "_集团排名_" in col:
+                    label = col.split("_集团排名_")[-1]
+                elif col.startswith("年级排名_"):
+                    label = col.replace("年级排名_", "")
+                elif col.startswith("集团排名_"):
+                    label = col.replace("集团排名_", "")
+                else:
+                    label = col
                 exam_display_names.append(label)
             
             for student in selected_students[:5]:
                 student_data = df_all[df_all["姓名"] == student]
-                ranks = [student_data[col].values[0] for col in rank_cols]
-                
-                fig.add_trace(go.Scatter(
-                    x=exam_display_names,
-                    y=ranks,
-                    mode='lines+markers',
-                    name=student,
-                    line=dict(width=3),
-                    marker=dict(size=10)
-                ))
+                if not student_data.empty:
+                    ranks = []
+                    for col in target_cols:
+                        val = student_data[col].values[0]
+                        # 将0值（缺考）转换为None，在图表中不显示
+                        ranks.append(None if val == 0 else val)
+                    
+                    fig.add_trace(go.Scatter(
+                        x=exam_display_names,
+                        y=ranks,
+                        mode='lines+markers',
+                        name=student,
+                        line=dict(width=3),
+                        marker=dict(size=10),
+                        connectgaps=False  # 不连接缺考的点
+                    ))
             
             fig.update_layout(
-                yaxis_title="排名",
+                yaxis_title=rank_type,
                 xaxis_title="考试",
                 yaxis=dict(autorange="reversed"),
                 height=500,
-                hovermode='x unified'
+                hovermode='x unified',
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
             )
             st.plotly_chart(fig, use_container_width=True)
         
@@ -416,19 +497,41 @@ with tab2:
         
         # 进步得分分布
         st.subheader("区间进步得分分布")
-        fig = px.histogram(
-            df_score,
-            x="区间进步得分",
-            nbins=20,
-            labels={"区间进步得分": "区间进步得分", "count": "人数"}
-        )
-        fig.update_traces(
-            marker=dict(
-                color='rgba(100, 200, 255, 0.7)',
-                line=dict(color='rgba(0, 0, 0, 0.5)', width=1)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig = px.histogram(
+                df_score,
+                x="区间进步得分",
+                nbins=20,
+                labels={"区间进步得分": "区间进步得分", "count": "人数"},
+                title="区间进步得分分布"
             )
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            fig.update_traces(
+                marker=dict(
+                    color='rgba(0, 172, 193, 0.7)',
+                    line=dict(color='rgba(0, 0, 0, 0.5)', width=1)
+                )
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # 连续进步次数分布
+            fig = px.histogram(
+                df_score,
+                x="连续进步次数",
+                nbins=max(df_score["连续进步次数"].max(), 5),
+                labels={"连续进步次数": "连续进步次数", "count": "人数"},
+                title="连续进步次数分布"
+            )
+            fig.update_traces(
+                marker=dict(
+                    color='rgba(239, 85, 59, 0.7)',
+                    line=dict(color='rgba(0, 0, 0, 0.5)', width=1)
+                )
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
 # Tab 3: 偏科检测
 with tab3:
@@ -465,8 +568,16 @@ with tab3:
         biased_students = df_bias[df_bias["偏科等级"] != "均衡发展"]
         
         if len(biased_students) > 0:
+            # 格式化显示
+            format_dict = {
+                "排名标准差": "{:.0f}",
+                "最大排名差": "{:.0f}",
+                "相对离散度": "{:.2f}",
+                "平均排名": "{:.0f}",
+                "扣分": "{:.0f}"
+            }
             st.dataframe(
-                biased_students.style.background_gradient(subset=['排名标准差'], cmap='YlOrRd'),
+                biased_students.style.background_gradient(subset=['排名标准差'], cmap='YlOrRd').format(format_dict),
                 use_container_width=True
             )
         else:
@@ -496,24 +607,144 @@ with tab4:
         
         st.markdown("---")
         
+        # 得分构成
+        st.subheader("📊 得分构成")
+        
+        # 收集得分数据
+        score_components = {}
+        score_components["区间进步得分"] = student_score.get("区间进步得分", 0)
+        score_components["连续进步加分"] = student_score.get("连续进步加分", 0)
+        
+        # 合并年级排名和集团排名加分
+        year_rank_bonus = student_score.get("年级排名加分", 0)
+        group_rank_bonus = student_score.get("集团排名加分", 0)
+        total_rank_bonus = year_rank_bonus + group_rank_bonus
+        if total_rank_bonus != 0:
+            score_components["排名加分"] = total_rank_bonus
+        
+        if "总分奖励" in student_score.index:
+            score_components["总分奖励"] = student_score.get("总分奖励", 0)
+        
+        if "偏科扣分" in student_score.index:
+            bias_penalty = student_score.get("偏科扣分", 0)
+            if bias_penalty != 0:
+                score_components["偏科扣分"] = bias_penalty
+        
+        # 使用两列布局展示
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            # 得分明细卡片
+            for name, value in score_components.items():
+                if name == "偏科扣分":
+                    st.metric(name, f"{value:.1f}", delta=None, delta_color="inverse")
+                else:
+                    delta_text = f"+{value:.1f}" if value > 0 else (f"{value:.1f}" if value < 0 else "0.0")
+                    st.metric(name, f"{value:.1f}", delta=delta_text if value != 0 else None)
+        
+        with col2:
+            # 饼图展示得分构成（只显示正值部分）
+            positive_scores = {k: v for k, v in score_components.items() if v > 0}
+            
+            if positive_scores:
+                fig = px.pie(
+                    values=list(positive_scores.values()),
+                    names=list(positive_scores.keys()),
+                    color_discrete_sequence=px.colors.qualitative.Set3
+                )
+                fig.update_traces(
+                    textposition='inside',
+                    textinfo='percent+label',
+                    textfont_size=14
+                )
+                fig.update_layout(height=500, showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("暂无得分数据")
+        
+        st.markdown("---")
+        
+        # 选择查看的内容和排名类型
+        col1, col2 = st.columns([3, 3])
+        
+        with col1:
+            # 选择查看总分还是各科
+            if has_subjects:
+                detail_view_options = ["总分"] + subjects
+            else:
+                detail_view_options = ["总分"]
+            
+            detail_selected_subject = st.selectbox(
+                "选择查看科目趋势",
+                detail_view_options,
+                index=0,
+                key="detail_subject"
+            )
+        
+        with col2:
+            # 选择年级排名还是集团排名
+            detail_rank_type_options = ["年级排名"]
+            has_group_rank = any("集团排名" in col for col in df_all.columns)
+            if has_group_rank:
+                detail_rank_type_options.append("集团排名")
+            
+            detail_rank_type = st.selectbox(
+                "选择排名类型",
+                detail_rank_type_options,
+                index=0,
+                key="detail_rank_type"
+            )
+        
+        # 根据选择提取对应的排名列
+        if detail_selected_subject == "总分":
+            if detail_rank_type == "年级排名":
+                detail_target_cols = [col for col in df_all.columns if col.startswith("总分_年级排名_") or (col.startswith("年级排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
+            else:
+                detail_target_cols = [col for col in df_all.columns if col.startswith("总分_集团排名_") or (col.startswith("集团排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
+        else:
+            if detail_rank_type == "年级排名":
+                detail_target_cols = [col for col in df_all.columns if col.startswith(f"{detail_selected_subject}_年级排名_")]
+            else:
+                detail_target_cols = [col for col in df_all.columns if col.startswith(f"{detail_selected_subject}_集团排名_")]
+        
         # 排名历史
-        if len(rank_cols) > 0:
-            st.subheader("排名历史")
-            ranks = [student_data[col] for col in rank_cols]
-            exam_names = [col.replace("排名_", "") for col in rank_cols]
+        if len(detail_target_cols) > 0:
+            st.subheader(f"{detail_selected_subject} - {detail_rank_type}历史")
+            
+            ranks = []
+            exam_names = []
+            
+            for col in detail_target_cols:
+                val = student_data[col]
+                # 提取考试名称
+                if "_年级排名_" in col:
+                    label = col.split("_年级排名_")[-1]
+                elif "_集团排名_" in col:
+                    label = col.split("_集团排名_")[-1]
+                elif col.startswith("年级排名_"):
+                    label = col.replace("年级排名_", "")
+                elif col.startswith("集团排名_"):
+                    label = col.replace("集团排名_", "")
+                else:
+                    label = col
+                
+                # 将0值（缺考）转换为None
+                ranks.append(None if val == 0 else val)
+                exam_names.append(label)
             
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=exam_names,
                 y=ranks,
                 mode='lines+markers+text',
-                text=ranks,
+                text=[f"{int(r)}" if r is not None else "缺考" for r in ranks],
                 textposition='top center',
                 line=dict(width=3, color='#FF6B6B'),
-                marker=dict(size=12, color='#FF6B6B')
+                marker=dict(size=12, color='#FF6B6B'),
+                connectgaps=False
             ))
             fig.update_layout(
-                yaxis_title="排名",
+                yaxis_title=detail_rank_type,
                 xaxis_title="考试",
                 yaxis=dict(autorange="reversed"),
                 height=400
@@ -587,3 +818,233 @@ with tab5:
         file_name="完整分析结果.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+# Tab 6: 得分详情
+with tab6:
+    st.header("🔍 得分详情（调试）")
+    
+    st.info("💡 此页面显示每个学生的详细得分计算过程，帮助理解评分逻辑")
+    
+    # 从session_state获取数据
+    rank_cols = st.session_state.get('rank_cols', [])
+    score_cols = st.session_state.get('score_cols', [])
+    group_rank_cols = st.session_state.get('group_rank_cols', [])
+    subjects = st.session_state.get('subjects', [])
+    exam_labels = st.session_state.get('exam_labels', {})
+    
+    # 选择学生
+    debug_student = st.selectbox("选择学生查看详细得分", df_all["姓名"].tolist(), key="debug_student")
+    
+    if debug_student:
+        student_data = df_all[df_all["姓名"] == debug_student].iloc[0]
+        student_score = df_score[df_score["姓名"] == debug_student].iloc[0]
+        
+        st.subheader(f"📋 {debug_student} 的得分明细")
+        
+        # 筛选出总分的年级排名列（用于计算进步得分的列）
+        total_rank_cols = [col for col in rank_cols 
+                          if col.startswith("总分_年级排名_") or 
+                          (col.startswith("年级排名_") and not any(subj in col for subj in subjects))]
+        
+        # 1. 排名历史
+        st.markdown("### 1️⃣ 排名历史（总分年级排名）")
+        if len(total_rank_cols) == 0:
+            st.warning("⚠️ 未找到总分年级排名数据")
+        else:
+            rank_data = []
+            for col in total_rank_cols:
+                exam_label = col.replace("总分_年级排名_", "").replace("年级排名_", "")
+                rank_val = student_data[col]
+                
+                # 检查该次考试是否有科目缺考
+                is_exam_absent = False
+                if subjects and exam_label:
+                    for subj in subjects:
+                        subj_col = f"{subj}_{exam_label}"
+                        if subj_col in student_data.index:
+                            score_val = student_data[subj_col]
+                            if pd.isna(score_val) or score_val == 0:
+                                is_exam_absent = True
+                                break
+                
+                # 如果该次考试有科目缺考，显示为"缺考"
+                if is_exam_absent or rank_val == 0 or pd.isna(rank_val):
+                    rank_data.append({"考试": exam_label, "年级排名": "缺考"})
+                else:
+                    rank_data.append({"考试": exam_label, "年级排名": int(rank_val)})
+            st.table(pd.DataFrame(rank_data))
+        
+        # 2. 区间进步得分
+        st.markdown("### 2️⃣ 区间进步得分计算")
+        
+        # 显示实际使用的排名列
+        st.write(f"**使用的排名列数量**: {len(total_rank_cols)}")
+        st.write(f"**排名列**: {total_rank_cols}")
+        
+        if len(total_rank_cols) >= 2:
+            # 重新应用缺考检测逻辑构建ranks数组
+            ranks = []
+            for col in total_rank_cols:
+                rank_val = student_data[col]
+                
+                # 从列名提取考试标识
+                exam_label = None
+                if "_年级排名_" in col:
+                    exam_label = col.split("_年级排名_")[-1]
+                elif col.startswith("年级排名_"):
+                    exam_label = col.replace("年级排名_", "")
+                
+                # 检查该次考试是否有科目缺考
+                is_exam_absent = False
+                if subjects and exam_label:
+                    for subj in subjects:
+                        subj_col = f"{subj}_{exam_label}"
+                        if subj_col in student_data.index:
+                            score_val = student_data[subj_col]
+                            if pd.isna(score_val) or score_val == 0:
+                                is_exam_absent = True
+                                break
+                
+                # 如果该次考试有科目缺考，排名设为0
+                if is_exam_absent or pd.isna(rank_val) or rank_val == 0:
+                    ranks.append(0)
+                else:
+                    ranks.append(int(rank_val))
+            
+            st.write(f"**排名序列**: {ranks}")
+            
+            # 计算每次进步得分
+            from score_analysis_v0_1 import progress_score
+            from utils.data_processor import process_data
+            
+            # 获取配置
+            weights = []
+            for interval in st.session_state.rank_intervals:
+                weights.append((int(interval["start"]), int(interval["end"]), float(interval["weight"])))
+            
+            progress_details = []
+            for i in range(1, len(ranks)):
+                before = int(ranks[i-1]) if ranks[i-1] > 0 else 0
+                now = int(ranks[i]) if ranks[i] > 0 else 0
+                if before > 0 and now > 0 and now < before:
+                    score = progress_score(before, now, weights)
+                    progress_details.append({
+                        "对比": f"{exam_labels.get(i, f'考试{i}')} vs {exam_labels.get(i+1, f'考试{i+1}')}",
+                        "排名变化": f"{before} → {now}",
+                        "进步名次": before - now,
+                        "得分": f"{score:.1f}"
+                    })
+            
+            if progress_details:
+                st.table(pd.DataFrame(progress_details))
+            else:
+                st.write("无区间进步")
+            st.write(f"**总区间进步得分**: {student_score['区间进步得分']:.1f}")
+        else:
+            st.info(f"💡 当前只有 {len(total_rank_cols)} 次考试数据，需要至少2次考试才能计算进步得分")
+        
+        # 3. 连续进步
+        st.markdown("### 3️⃣ 连续进步加分")
+        st.write(f"**连续进步次数**: {int(student_score['连续进步次数'])}")
+        st.write(f"**连续进步加分**: {student_score['连续进步加分']:.1f}")
+        
+        # 调试信息
+        if len(total_rank_cols) == 1:
+            st.warning("⚠️ 只有1次考试数据，理论上不应该有连续进步。这可能是计算错误。")
+        
+        # 显示连续进步配置
+        with st.expander("查看连续进步配置"):
+            chain_config = pd.DataFrame(st.session_state.chain_bonuses)[["times", "bonus"]]
+            chain_config.columns = ["连续次数", "奖励分数"]
+            st.table(chain_config)
+        
+        # 4. 年级排名加分
+        st.markdown("### 4️⃣ 年级排名加分")
+        if len(total_rank_cols) > 0:
+            latest_rank = int(student_data[total_rank_cols[-1]]) if student_data[total_rank_cols[-1]] > 0 else 0
+            st.write(f"**最新年级排名**: {latest_rank if latest_rank > 0 else '缺考'}")
+            st.write(f"**年级排名加分**: {student_score['年级排名加分']:.1f}")
+        else:
+            st.write("**无年级排名数据**")
+        
+        # 显示年级排名配置
+        with st.expander("查看年级排名奖励配置"):
+            rank_config = pd.DataFrame(st.session_state.rank_bonuses)[["threshold", "bonus"]]
+            rank_config.columns = ["排名阈值", "奖励分数"]
+            st.table(rank_config)
+            st.write(f"**A线**: {st.session_state.config_params.get('A线（排名）', 430)}，奖励: {st.session_state.config_params.get('A线过线奖励', 5)}")
+            st.write(f"**B线**: {st.session_state.config_params.get('B线（排名）', 500)}，奖励: {st.session_state.config_params.get('B线过线奖励', 3)}")
+        
+        # 5. 集团排名加分
+        if group_rank_cols and len(group_rank_cols) > 0:
+            st.markdown("### 5️⃣ 集团排名加分")
+            
+            # 筛选出总分的集团排名列
+            total_group_rank_cols = [col for col in group_rank_cols 
+                                    if col.startswith("总分_集团排名_") or 
+                                    (col.startswith("集团排名_") and not any(subj in col for subj in subjects)) or
+                                    col == "总分集团排名"]
+            
+            if total_group_rank_cols and len(total_group_rank_cols) > 0:
+                latest_group_rank = student_data[total_group_rank_cols[-1]]
+                if pd.notna(latest_group_rank) and latest_group_rank > 0:
+                    st.write(f"**最新集团排名**: {int(latest_group_rank)}")
+                    st.write(f"**集团排名加分**: {student_score['集团排名加分']:.1f}")
+                    
+                    with st.expander("查看集团排名奖励配置"):
+                        group_config = pd.DataFrame(st.session_state.group_rank_bonuses)[["threshold", "bonus"]]
+                        group_config.columns = ["排名阈值", "奖励分数"]
+                        st.table(group_config)
+                else:
+                    st.write("无集团排名数据")
+            else:
+                st.write("无总分集团排名数据")
+        
+        # 6. 总分奖励
+        if score_cols and len(score_cols) > 0:
+            st.markdown("### 6️⃣ 总分奖励")
+            latest_score = student_data[score_cols[-1]]
+            st.write(f"**最新总分**: {latest_score:.1f}")
+            st.write(f"**总分奖励**: {student_score['总分奖励']:.1f}")
+            
+            with st.expander("查看总分奖励配置"):
+                score_config = pd.DataFrame(st.session_state.score_bonuses)[["threshold", "bonus"]]
+                score_config.columns = ["分数阈值", "奖励分数"]
+                st.table(score_config)
+        
+        # 7. 偏科扣分
+        if has_subjects:
+            st.markdown("### 7️⃣ 偏科扣分")
+            student_bias = df_bias[df_bias["姓名"] == debug_student]
+            if not student_bias.empty:
+                bias_info = student_bias.iloc[0]
+                st.write(f"**偏科等级**: {bias_info['偏科等级']}")
+                st.write(f"**排名标准差**: {bias_info['排名标准差']:.1f}")
+                st.write(f"**最大排名差**: {int(bias_info['最大排名差'])}")
+                st.write(f"**相对离散度**: {bias_info['相对离散度']:.2f}")
+                st.write(f"**最强科目**: {bias_info['最强科目']}")
+                st.write(f"**最弱科目**: {bias_info['最弱科目']}")
+                st.write(f"**偏科扣分**: {student_score['偏科扣分']:.1f}")
+        
+        # 8. 总得分
+        st.markdown("---")
+        st.markdown("### 📊 总得分")
+        col1, col2 = st.columns(2)
+        with col1:
+            score_breakdown = {
+                "区间进步得分": student_score['区间进步得分'],
+                "连续进步加分": student_score['连续进步加分'],
+                "年级排名加分": student_score['年级排名加分'],
+                "集团排名加分": student_score['集团排名加分'],
+            }
+            if '总分奖励' in student_score.index:
+                score_breakdown["总分奖励"] = student_score['总分奖励']
+            if '偏科扣分' in student_score.index:
+                score_breakdown["偏科扣分"] = student_score['偏科扣分']
+            
+            breakdown_df = pd.DataFrame(list(score_breakdown.items()), columns=["项目", "得分"])
+            st.table(breakdown_df)
+        
+        with col2:
+            st.metric("总得分", f"{student_score['总得分']:.1f}", 
+                     delta=None if student_score['总得分'] == 0 else f"+{student_score['总得分']:.1f}")

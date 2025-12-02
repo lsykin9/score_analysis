@@ -6,6 +6,8 @@ import streamlit as st
 import pandas as pd
 import io
 import time
+import os
+import glob
 
 
 @st.fragment
@@ -668,9 +670,25 @@ def _render_file_upload():
             else:
                 df_history = pd.read_excel(io.BytesIO(history_file.getvalue()))
             
-            # 同时检查旧格式（排名_）和新格式（年级排名_）
-            rank_cols = [col for col in df_history.columns if col.startswith("排名_") or col.startswith("年级排名_")]
-            st.session_state.history_exam_count = len(rank_cols)
+            # 检测考试次数：支持两种格式
+            # 1. 旧格式：排名_xxx 或 年级排名_xxx
+            # 2. 新格式：总分_年级排名_xxx 或 科目_年级排名_xxx
+            import re
+            exam_labels_found = set()
+            
+            for col in df_history.columns:
+                # 旧格式：年级排名_xxx 或 排名_xxx
+                if col.startswith("排名_") or col.startswith("年级排名_"):
+                    match = re.search(r'^(?:年级)?排名_(.+)$', col)
+                    if match:
+                        exam_labels_found.add(match.group(1))
+                # 新格式：xxx_年级排名_yyy（从yyy提取考试标签）
+                elif "_年级排名_" in col:
+                    match = re.search(r'_年级排名_(.+)$', col)
+                    if match:
+                        exam_labels_found.add(match.group(1))
+            
+            st.session_state.history_exam_count = len(exam_labels_found)
             st.success(f"✅ 历史总表已上传 (包含 {st.session_state.history_exam_count} 次考试)")
         except Exception as e:
             st.error(f"❌ 历史文件读取失败: {str(e)}")
@@ -756,12 +774,31 @@ def _render_control_buttons():
     
     with col2:
         if st.button("🔄 重置", disabled=not st.session_state.analysis_started):
+            # 清理临时文件
+            import glob
+            temp_files = glob.glob("*_temp.xlsx")
+            for f in temp_files:
+                try:
+                    if os.path.exists(f):
+                        os.remove(f)
+                except:
+                    pass
+            
+            # 清理session state
             st.session_state.score_files = []
             st.session_state.analysis_started = False
             st.session_state.history_file_content = None
             st.session_state.history_exam_count = 0
             st.session_state.uploader_key += 1  # 增加key值以重置file_uploader
+            
+            # 清理分析结果缓存
+            for key in ['df_all', 'df_score', 'df_final', 'df_bias', 'has_subjects', 
+                       'rank_cols', 'score_cols', 'group_rank_cols', 'subjects', 'bias_dict', 'exam_labels']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
             # 注意: 不清除 config_params，保留用户的参数设置
+            st.success("✅ 已清理所有临时文件和缓存")
             st.rerun()
 
 

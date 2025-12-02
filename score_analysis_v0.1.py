@@ -96,6 +96,9 @@ def progress_score(before, now, weights):
 def ranking_bonus(now, before, config):
     if now == 0:
         return 0
+    
+    # 找到最小的满足条件的阈值（当前排名必须<=阈值才能拿奖励）
+    # 例如：排名4，可以拿10、20、30、50、100的奖励，应该拿最小阈值10对应的奖励
     min_threshold = float("inf")
     bonus = 0
     for threshold, b in config["rank_bonus"].items():
@@ -127,6 +130,7 @@ def group_ranking_bonus(group_rank, config):
     if "group_rank_bonus" not in config:
         return 0
     
+    # 找到最小的满足条件的阈值
     min_threshold = float("inf")
     bonus = 0
     for threshold, b in config["group_rank_bonus"].items():

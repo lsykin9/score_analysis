@@ -5,6 +5,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import os
 from score_analysis_v0_1 import (
     progress_score,
     ranking_bonus,
@@ -97,16 +98,16 @@ def process_data():
         weights.append((start, end, weight))
     
     # 从动态排名奖励构建rank_bonus
-    rank_bonus = {item["threshold"]: item["bonus"] for item in st.session_state.rank_bonuses}
+    rank_bonus = {int(item["threshold"]): float(item["bonus"]) for item in st.session_state.rank_bonuses}
     
     # 从动态集团排名奖励构建group_rank_bonus
-    group_rank_bonus = {item["threshold"]: item["bonus"] for item in st.session_state.group_rank_bonuses}
+    group_rank_bonus = {int(item["threshold"]): float(item["bonus"]) for item in st.session_state.group_rank_bonuses}
     
     # 从动态连续进步奖励构建chain_bonus
-    chain_bonus = {item["times"]: item["bonus"] for item in st.session_state.chain_bonuses}
+    chain_bonus = {int(item["times"]): float(item["bonus"]) for item in st.session_state.chain_bonuses}
     
     # 从动态总分奖励构建score_bonus
-    score_bonus = {item["threshold"]: item["bonus"] for item in st.session_state.score_bonuses}
+    score_bonus = {int(item["threshold"]): float(item["bonus"]) for item in st.session_state.score_bonuses}
     
     # 偏科扣分参数
     bias_penalty = {
@@ -181,6 +182,22 @@ def process_data():
     # 处理新上传的成绩文件
     all_dfs = []
     exam_labels = {}  # 存储考试编号到标签的映射
+    
+    # 如果有历史总表，从列名中提取考试标签
+    if df_all is not None:
+        # 从成绩列名中提取考试标签（格式：科目_考试X 或 总分_考试X）
+        import re
+        for col in df_all.columns:
+            # 匹配 "科目_考试X" 或 "总分_考试X" 或 "年级排名_考试X" 等格式
+            match = re.search(r'_(.+)$', col)
+            if match:
+                exam_label = match.group(1)
+                # 尝试提取考试编号（如果是"考试1"、"考试2"这样的格式）
+                exam_num_match = re.search(r'考试(\d+)', exam_label)
+                if exam_num_match:
+                    exam_num = int(exam_num_match.group(1))
+                    if exam_num not in exam_labels:
+                        exam_labels[exam_num] = exam_label
     
     if len(st.session_state.score_files) > 0:
         for idx, file_info in enumerate(st.session_state.score_files):
@@ -326,9 +343,32 @@ def process_data():
     
     # 分析得分
     results = []
-    rank_cols = [col for col in df_all.columns if col.startswith("排名_") or col.startswith("年级排名_")]
-    group_rank_cols = [col for col in df_all.columns if col.startswith("集团排名_")]
-    score_cols = [col for col in df_all.columns if col.startswith("总分_")]
+    # 支持两种格式的排名列：
+    # 1. 旧格式：排名_xxx 或 年级排名_xxx
+    # 2. 新格式：总分_年级排名_xxx 或 科目_年级排名_xxx
+    # 只保留总分的年级排名列，排除单科排名
+    rank_cols = []
+    for col in df_all.columns:
+        # 只处理总分的年级排名列
+        if col.startswith("总分_年级排名_") or col == "年级排名" or col.startswith("年级排名_"):
+            # 排除科目排名列
+            is_subject_rank = any(col.startswith(f"{subj}_年级排名_") for subj in subjects)
+            if not is_subject_rank:
+                rank_cols.append(col)
+    
+    # 集团排名列
+    group_rank_cols = []
+    for col in df_all.columns:
+        if col.startswith("集团排名_"):
+            group_rank_cols.append(col)
+        elif "_集团排名_" in col:
+            group_rank_cols.append(col)
+    
+    # 总分列（排除年级排名和集团排名列）
+    score_cols = []
+    for col in df_all.columns:
+        if col.startswith("总分_") and "年级排名" not in col and "集团排名" not in col:
+            score_cols.append(col)
     
     # 如果有科目成绩，需要计算偏科扣分
     bias_dict = {}
@@ -343,6 +383,7 @@ def process_data():
             if subj_score_cols:
                 subject_cols_dict[subj] = subj_score_cols[-1]
     
+    
     for idx, row in df_all.iterrows():
         name = row["姓名"]
         
@@ -350,36 +391,54 @@ def process_data():
         if not isinstance(name, str) or pd.isna(name):
             continue
         
-        # 检测缺考：检查最新一次考试是否有科目缺考
-        is_absent = False
-        if has_subjects:
-            for subj, col in subject_cols_dict.items():
-                latest_score = row[col]
-                if pd.isna(latest_score) or latest_score == 0:
-                    is_absent = True
-                    break
-        
-        # 将排名转换为整数,处理浮点数和NaN
+        # 将排名转换为整数,同时检测每次考试是否有科目缺考
         ranks = []
+        
         for col in rank_cols:
             val = row[col]
             # 检查val是否为字符串（可能是表头）
             if isinstance(val, str):
                 continue  # 跳过这一行
-            if pd.isna(val) or val == 0:
+            
+            # 从列名提取考试标识（例如：总分_年级排名_考试2 -> 考试2）
+            exam_label = None
+            if "_年级排名_" in col:
+                exam_label = col.split("_年级排名_")[-1]
+            elif col.startswith("年级排名_"):
+                exam_label = col.replace("年级排名_", "")
+            
+            # 检查该次考试是否有科目缺考
+            is_exam_absent = False
+            if has_subjects and exam_label:
+                for subj in subjects:
+                    # 查找该科目在该次考试的成绩列
+                    subj_col = f"{subj}_{exam_label}"
+                    if subj_col in df_all.columns:
+                        score_val = row[subj_col]
+                        if pd.isna(score_val) or score_val == 0:
+                            is_exam_absent = True
+                            break
+            
+            # 如果该次考试有科目缺考，排名设为0（无效）
+            if is_exam_absent:
+                ranks.append(0)
+            elif pd.isna(val) or val == 0:
                 ranks.append(0)
             else:
                 try:
                     ranks.append(int(float(val)))
                 except (ValueError, TypeError):
-                    ranks.append(0)  # 转换失败时使用0
+                    ranks.append(0)
+        
+        # 检测最新一次考试是否缺考
+        is_absent = (ranks[-1] == 0) if ranks else False
         
         chain_len = 0
         chain_progress = 0.0
         last_valid_rank_idx = -1  # 记录最后一个非缺考的排名位置
 
-        # 计算连续进步次数（需要考虑缺考）
-        # 如果当前缺考，需要找到上一次有效成绩
+        # 计算连续进步次数（需要跳过缺考，找到前一个有效排名）
+        # 对于 [27, 0, 9, 4]，应该比较: 27→9 (进步), 9→4 (进步)，连续进步2次
         if is_absent:
             # 当前缺考，从倒数第二次开始往前找有效成绩
             for i in range(len(ranks) - 2, -1, -1):
@@ -389,20 +448,21 @@ def process_data():
             
             # 如果找到了有效成绩，计算到该位置为止的连续进步次数
             if last_valid_rank_idx >= 0:
-                for i in range(1, last_valid_rank_idx + 1):
-                    before, now = ranks[i - 1], ranks[i]
-                    if now != 0 and before != 0 and now < before:
+                # 从第一个有效排名开始，跳过缺考逐个比较
+                valid_ranks = [r for r in ranks[:last_valid_rank_idx + 1] if r != 0]
+                for i in range(1, len(valid_ranks)):
+                    if valid_ranks[i] < valid_ranks[i - 1]:
                         chain_len += 1
-                    elif now != 0 and before != 0:
+                    else:
                         # 退步则归零
                         chain_len = 0
         else:
-            # 当前没有缺考，正常计算连续进步次数
-            for i in range(1, len(ranks)):
-                before, now = ranks[i - 1], ranks[i]
-                if now != 0 and before != 0 and now < before:
+            # 当前没有缺考，提取所有有效排名进行比较
+            valid_ranks = [r for r in ranks if r != 0]
+            for i in range(1, len(valid_ranks)):
+                if valid_ranks[i] < valid_ranks[i - 1]:
                     chain_len += 1
-                elif now != 0 and before != 0:
+                else:
                     # 退步则归零
                     chain_len = 0
         
@@ -425,7 +485,7 @@ def process_data():
 
         # 排名加分（年级排名）- 缺考时不加分
         rank_add = 0
-        if not is_absent:
+        if not is_absent and len(ranks) > 0:
             latest_rank = int(ranks[-1]) if ranks[-1] else 0
             # 找到上一次有效排名（跳过缺考）
             previous_rank = 9999
@@ -438,9 +498,16 @@ def process_data():
         # 集团排名加分 - 缺考时不加分
         group_rank_add = 0
         if not is_absent and group_rank_cols and len(group_rank_cols) > 0:
-            latest_group_rank = row[group_rank_cols[-1]]
-            if pd.notna(latest_group_rank) and latest_group_rank > 0:
-                group_rank_add = group_ranking_bonus(int(latest_group_rank), config)
+            # 筛选出总分的集团排名列
+            total_group_rank_cols = [col for col in group_rank_cols 
+                                    if col.startswith("总分_集团排名_") or 
+                                    (col.startswith("集团排名_") and not any(subj in col for subj in subjects)) or
+                                    col == "总分集团排名"]
+            
+            if total_group_rank_cols and len(total_group_rank_cols) > 0:
+                latest_group_rank = row[total_group_rank_cols[-1]]
+                if pd.notna(latest_group_rank) and latest_group_rank > 0:
+                    group_rank_add = group_ranking_bonus(int(latest_group_rank), config)
         
         # 连续进步加分
         chain_add = chain_bonus_score(chain_len, config)
@@ -534,5 +601,15 @@ def process_data():
             })
         df_bias = pd.DataFrame(bias_results)
         df_bias = df_bias.sort_values(by="排名标准差", ascending=False)
+    
+    # 清理临时文件（在数据处理完成后）
+    import glob
+    temp_files = glob.glob("*_temp.xlsx")
+    for f in temp_files:
+        try:
+            if os.path.exists(f):
+                os.remove(f)
+        except:
+            pass  # 忽略删除失败的情况
     
     return df_all, df_score, df_final, df_bias, has_subjects, rank_cols, score_cols, subjects, bias_dict, exam_labels

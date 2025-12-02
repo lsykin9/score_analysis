@@ -87,11 +87,15 @@ def initialize_session_state():
     # 动态总分奖励列表
     if 'score_bonuses' not in st.session_state:
         st.session_state.score_bonuses = [
-            {"id": 0, "threshold": 600, "bonus": 15},
-            {"id": 1, "threshold": 650, "bonus": 20},
-            {"id": 2, "threshold": 700, "bonus": 30}
+            {"id": 0, "threshold": 580, "bonus": 5},
+            {"id": 1, "threshold": 590, "bonus": 8},
+            {"id": 2, "threshold": 600, "bonus": 10},
+            {"id": 3, "threshold": 610, "bonus": 12},
+            {"id": 4, "threshold": 620, "bonus": 15},
+            {"id": 5, "threshold": 630, "bonus": 18},
+            {"id": 6, "threshold": 640, "bonus": 20}
         ]
-        st.session_state.next_score_bonus_id = 3
+        st.session_state.next_score_bonus_id = 7
 
     # 默认参数配置
     if 'config_params' not in st.session_state:
@@ -105,9 +109,13 @@ def initialize_session_state():
             "连续进步第3次奖励": 12,
             "连续进步第4次奖励": 18,
             "连续进步第5次奖励": 25,
-            "总分大于600奖励": 15,
-            "总分大于650奖励": 20,
-            "总分大于700奖励": 30,
+            "总分大于580奖励": 5,
+            "总分大于590奖励": 8,
+            "总分大于600奖励": 10,
+            "总分大于610奖励": 12,
+            "总分大于620奖励": 15,
+            "总分大于630奖励": 18,
+            "总分大于640奖励": 20,
             "轻微偏科扣分": 5,
             "明显偏科扣分": 15,
             "严重偏科扣分": 30,
