@@ -55,6 +55,12 @@ st.set_page_config(
 # 自定义样式
 st.markdown("""
     <style>
+    /* 侧边栏宽度设置 */
+    [data-testid="stSidebar"][aria-expanded="true"] {
+        min-width: 400px;
+        max-width: 400px;
+    }
+    
     .main {
         padding: 0rem 1rem;
     }
