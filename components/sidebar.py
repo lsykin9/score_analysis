@@ -10,49 +10,107 @@ import os
 import glob
 import json
 from pathlib import Path
+from streamlit.components.v1 import html
 
 
-# 配置文件路径
+# 配置文件路径（作为备用）
 CONFIG_FILE = Path("config/user_settings.json")
 
 
+def _save_to_browser():
+    """保存配置到浏览器 localStorage"""
+    config = {
+        "config_params": st.session_state.config_params,
+        "rank_intervals": st.session_state.rank_intervals,
+        "rank_bonuses": st.session_state.rank_bonuses,
+        "group_rank_bonuses": st.session_state.group_rank_bonuses,
+        "chain_bonuses": st.session_state.chain_bonuses,
+        "score_bonuses": st.session_state.score_bonuses,
+        "bias_penalties": st.session_state.bias_penalties,
+    }
+    
+    config_json = json.dumps(config, ensure_ascii=False)
+    
+    # 使用 JavaScript 保存到 localStorage
+    html(f"""
+        <script>
+            localStorage.setItem('score_analysis_config', {json.dumps(config_json)});
+            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: 'saved'}}, '*');
+        </script>
+    """, height=0)
+
+
+def _load_from_browser():
+    """从浏览器 localStorage 加载配置"""
+    # 使用 JavaScript 读取 localStorage 并返回
+    result = html("""
+        <script>
+            const config = localStorage.getItem('score_analysis_config');
+            window.parent.postMessage({type: 'streamlit:setComponentValue', value: config}, '*');
+        </script>
+    """, height=0)
+    
+    if result and result != 'null':
+        try:
+            config = json.loads(result)
+            st.session_state.config_params = config.get("config_params", {})
+            st.session_state.rank_intervals = config.get("rank_intervals", [])
+            st.session_state.rank_bonuses = config.get("rank_bonuses", [])
+            st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
+            st.session_state.chain_bonuses = config.get("chain_bonuses", [])
+            st.session_state.score_bonuses = config.get("score_bonuses", [])
+            st.session_state.bias_penalties = config.get("bias_penalties", [])
+            return True
+        except:
+            return False
+    return False
+
+
 def _save_config():
-    """保存当前配置到文件"""
+    """保存当前配置"""
     try:
-        # 创建配置目录
-        CONFIG_FILE.parent.mkdir(exist_ok=True)
+        # 同时保存到浏览器和服务器
+        _save_to_browser()
         
-        # 收集所有配置参数
-        config = {
-            "config_params": st.session_state.config_params,
-            "rank_intervals": st.session_state.rank_intervals,
-            "rank_bonuses": st.session_state.rank_bonuses,
-            "group_rank_bonuses": st.session_state.group_rank_bonuses,
-            "chain_bonuses": st.session_state.chain_bonuses,
-            "score_bonuses": st.session_state.score_bonuses,
-            "bias_penalties": st.session_state.bias_penalties,
-        }
+        # 备用：也保存到服务器文件（如果可写）
+        try:
+            CONFIG_FILE.parent.mkdir(exist_ok=True)
+            config = {
+                "config_params": st.session_state.config_params,
+                "rank_intervals": st.session_state.rank_intervals,
+                "rank_bonuses": st.session_state.rank_bonuses,
+                "group_rank_bonuses": st.session_state.group_rank_bonuses,
+                "chain_bonuses": st.session_state.chain_bonuses,
+                "score_bonuses": st.session_state.score_bonuses,
+                "bias_penalties": st.session_state.bias_penalties,
+            }
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+        except:
+            pass  # 服务器文件保存失败不影响浏览器保存
         
-        # 保存到JSON文件
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-        
-        st.success("✅ 配置已保存！下次打开将自动加载")
+        st.success("✅ 配置已保存到浏览器！下次打开将自动加载")
     except Exception as e:
         st.error(f"❌ 保存配置失败: {str(e)}")
 
 
 def _load_config():
-    """从文件加载配置"""
+    """手动加载配置"""
+    # 先尝试从浏览器加载
+    if _load_from_browser():
+        st.success("✅ 已从浏览器加载配置！")
+        st.rerun()
+        return
+    
+    # 如果浏览器没有，尝试从服务器文件加载
     try:
         if not CONFIG_FILE.exists():
-            st.warning("⚠️ 未找到保存的配置文件")
+            st.warning("⚠️ 未找到保存的配置")
             return False
         
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
-        # 恢复配置到session_state
         st.session_state.config_params = config.get("config_params", {})
         st.session_state.rank_intervals = config.get("rank_intervals", [])
         st.session_state.rank_bonuses = config.get("rank_bonuses", [])
@@ -61,7 +119,7 @@ def _load_config():
         st.session_state.score_bonuses = config.get("score_bonuses", [])
         st.session_state.bias_penalties = config.get("bias_penalties", [])
         
-        st.success("✅ 配置已加载！")
+        st.success("✅ 已从服务器加载配置！")
         st.rerun()
         return True
     except Exception as e:
@@ -71,12 +129,44 @@ def _load_config():
 
 def auto_load_config():
     """自动加载保存的配置（在应用启动时调用）"""
-    if CONFIG_FILE.exists() and 'config_loaded' not in st.session_state:
-        try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            # 恢复配置到session_state
+    if 'config_loaded' not in st.session_state:
+        # 先尝试从浏览器加载
+        loaded = _try_load_from_browser_silent()
+        
+        # 如果浏览器没有，尝试从服务器文件加载
+        if not loaded and CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                st.session_state.config_params = config.get("config_params", {})
+                st.session_state.rank_intervals = config.get("rank_intervals", [])
+                st.session_state.rank_bonuses = config.get("rank_bonuses", [])
+                st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
+                st.session_state.chain_bonuses = config.get("chain_bonuses", [])
+                st.session_state.score_bonuses = config.get("score_bonuses", [])
+                st.session_state.bias_penalties = config.get("bias_penalties", [])
+            except:
+                pass
+        
+        st.session_state.config_loaded = True
+
+
+def _try_load_from_browser_silent():
+    """静默尝试从浏览器加载配置（用于自动加载，不显示消息）"""
+    try:
+        # 注入 JavaScript 代码来读取 localStorage
+        result = html("""
+            <script>
+                const config = localStorage.getItem('score_analysis_config');
+                if (config) {
+                    window.parent.postMessage({type: 'streamlit:setComponentValue', value: config}, '*');
+                }
+            </script>
+        """, height=0)
+        
+        if result and result != 'null':
+            config = json.loads(result)
             st.session_state.config_params = config.get("config_params", {})
             st.session_state.rank_intervals = config.get("rank_intervals", [])
             st.session_state.rank_bonuses = config.get("rank_bonuses", [])
@@ -84,10 +174,10 @@ def auto_load_config():
             st.session_state.chain_bonuses = config.get("chain_bonuses", [])
             st.session_state.score_bonuses = config.get("score_bonuses", [])
             st.session_state.bias_penalties = config.get("bias_penalties", [])
-            
-            st.session_state.config_loaded = True
-        except:
-            pass
+            return True
+    except:
+        pass
+    return False
 
 
 def _reset_to_default():
@@ -999,8 +1089,8 @@ def _render_usage_info():
     
     💡 **提示**
     - 参数配置可在顶部「评分参数设置」中调整
-    - 点击「💾 保存配置」将记住你的参数设置
-    - 下次打开系统会自动加载保存的配置
+    - 点击「💾 保存配置」将配置保存到浏览器
+    - 下次用同一浏览器访问会自动加载配置
     - 如果上传了历史总表，新成绩将接续在后面
     - 文件顺序会自动标记（第N次）
     - 可以随时删除已上传的文件重新上传
