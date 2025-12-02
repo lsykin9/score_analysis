@@ -966,6 +966,18 @@ def _render_file_upload():
             st.error(f"❌ 历史文件读取失败: {str(e)}")
             st.session_state.history_file_content = None
             st.session_state.history_exam_count = 0
+    elif history_file is None and st.session_state.history_file_content is not None and not st.session_state.analysis_started:
+        # 用户删除了历史总表，清除相关数据和缓存
+        st.session_state.history_file_content = None
+        st.session_state.history_exam_count = 0
+        
+        # 同时清除已分析的数据缓存，避免残留
+        for key in ['df_all', 'df_score', 'df_final', 'df_bias', 'has_subjects', 
+                   'rank_cols', 'score_cols', 'group_rank_cols', 'subjects', 'bias_dict', 'exam_labels']:
+            if key in st.session_state:
+                del st.session_state[key]
+        
+        st.info("ℹ️ 已删除历史总表")
     
     # 计算当前应该是第几次
     if st.session_state.history_exam_count > 0:

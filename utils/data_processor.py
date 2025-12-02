@@ -217,6 +217,7 @@ def process_data():
                 df = pd.read_excel(temp_filename, skiprows=1)
             else:
                 df = pd.read_excel(temp_filename)
+            
             all_dfs.append((exam_num, exam_label, df))
     
     # 如果没有历史总表,需要从新文件推断格式
