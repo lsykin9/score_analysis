@@ -223,9 +223,11 @@ try:
     # 获取集团排名列
     group_rank_cols = []
     for col in df_all.columns:
+        # 新格式：总分集团排名_考试1 或 语文集团排名_考试1
+        # 旧格式：总分_集团排名_考试1 或 集团排名_考试1
         if col.startswith("集团排名_"):
             group_rank_cols.append(col)
-        elif "_集团排名_" in col:
+        elif "集团排名_" in col:
             group_rank_cols.append(col)
     
     # 存储到session state
@@ -432,17 +434,35 @@ with tab2:
         # 根据选择提取对应的排名列
         if selected_subject == "总分":
             if rank_type == "年级排名":
-                # 查找总分年级排名列
-                target_cols = [col for col in df_all.columns if col.startswith("总分_年级排名_") or (col.startswith("年级排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
+                # 查找总分年级排名列：支持新旧格式
+                # 新格式：总分年级排名_考试1
+                # 旧格式：总分_年级排名_考试1 或 年级排名_考试1
+                target_cols = [col for col in df_all.columns 
+                              if col.startswith("总分年级排名_") 
+                              or col.startswith("总分_年级排名_") 
+                              or (col.startswith("年级排名_") and not any(subj in col for subj in subjects))]
             else:
                 # 查找总分集团排名列
-                target_cols = [col for col in df_all.columns if col.startswith("总分_集团排名_") or (col.startswith("集团排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
+                # 新格式：总分集团排名_考试1
+                # 旧格式：总分_集团排名_考试1 或 集团排名_考试1
+                target_cols = [col for col in df_all.columns 
+                              if col.startswith("总分集团排名_") 
+                              or col.startswith("总分_集团排名_") 
+                              or (col.startswith("集团排名_") and not any(subj in col for subj in subjects))]
         else:
             # 各科排名
             if rank_type == "年级排名":
-                target_cols = [col for col in df_all.columns if col.startswith(f"{selected_subject}_年级排名_")]
+                # 新格式：语文年级排名_考试1
+                # 旧格式：语文_年级排名_考试1
+                target_cols = [col for col in df_all.columns 
+                              if col.startswith(f"{selected_subject}年级排名_") 
+                              or col.startswith(f"{selected_subject}_年级排名_")]
             else:
-                target_cols = [col for col in df_all.columns if col.startswith(f"{selected_subject}_集团排名_")]
+                # 新格式：语文集团排名_考试1
+                # 旧格式：语文_集团排名_考试1
+                target_cols = [col for col in df_all.columns 
+                              if col.startswith(f"{selected_subject}集团排名_") 
+                              or col.startswith(f"{selected_subject}_集团排名_")]
         
         if len(target_cols) < 2:
             st.warning(f"⚠️ {selected_subject}的{rank_type}数据不足，需要至少2次考试数据")
@@ -454,15 +474,9 @@ with tab2:
             # 提取考试标签
             exam_display_names = []
             for col in target_cols:
-                # 从列名中提取考试名称
-                if "_年级排名_" in col:
-                    label = col.split("_年级排名_")[-1]
-                elif "_集团排名_" in col:
-                    label = col.split("_集团排名_")[-1]
-                elif col.startswith("年级排名_"):
-                    label = col.replace("年级排名_", "")
-                elif col.startswith("集团排名_"):
-                    label = col.replace("集团排名_", "")
+                # 从列名中提取考试名称（从最后一个下划线后提取）
+                if '_' in col:
+                    label = col.rsplit('_', 1)[-1]
                 else:
                     label = col
                 exam_display_names.append(label)
@@ -707,14 +721,28 @@ with tab4:
         # 根据选择提取对应的排名列
         if detail_selected_subject == "总分":
             if detail_rank_type == "年级排名":
-                detail_target_cols = [col for col in df_all.columns if col.startswith("总分_年级排名_") or (col.startswith("年级排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
+                # 新格式：总分年级排名_考试1 或 旧格式：总分_年级排名_考试1
+                detail_target_cols = [col for col in df_all.columns 
+                                    if col.startswith("总分年级排名_") 
+                                    or col.startswith("总分_年级排名_") 
+                                    or (col.startswith("年级排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
             else:
-                detail_target_cols = [col for col in df_all.columns if col.startswith("总分_集团排名_") or (col.startswith("集团排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
+                # 新格式：总分集团排名_考试1 或 旧格式：总分_集团排名_考试1
+                detail_target_cols = [col for col in df_all.columns 
+                                    if col.startswith("总分集团排名_") 
+                                    or col.startswith("总分_集团排名_") 
+                                    or (col.startswith("集团排名_") and "总分" not in col and not any(subj in col for subj in subjects))]
         else:
             if detail_rank_type == "年级排名":
-                detail_target_cols = [col for col in df_all.columns if col.startswith(f"{detail_selected_subject}_年级排名_")]
+                # 新格式：语文年级排名_考试1 或 旧格式：语文_年级排名_考试1
+                detail_target_cols = [col for col in df_all.columns 
+                                    if col.startswith(f"{detail_selected_subject}年级排名_") 
+                                    or col.startswith(f"{detail_selected_subject}_年级排名_")]
             else:
-                detail_target_cols = [col for col in df_all.columns if col.startswith(f"{detail_selected_subject}_集团排名_")]
+                # 新格式：语文集团排名_考试1 或 旧格式：语文_集团排名_考试1
+                detail_target_cols = [col for col in df_all.columns 
+                                    if col.startswith(f"{detail_selected_subject}集团排名_") 
+                                    or col.startswith(f"{detail_selected_subject}_集团排名_")]
         
         # 排名历史
         if len(detail_target_cols) > 0:
@@ -725,17 +753,8 @@ with tab4:
             
             for col in detail_target_cols:
                 val = student_data[col]
-                # 提取考试名称
-                if "_年级排名_" in col:
-                    label = col.split("_年级排名_")[-1]
-                elif "_集团排名_" in col:
-                    label = col.split("_集团排名_")[-1]
-                elif col.startswith("年级排名_"):
-                    label = col.replace("年级排名_", "")
-                elif col.startswith("集团排名_"):
-                    label = col.replace("集团排名_", "")
-                else:
-                    label = col
+                # 提取考试名称（统一使用rsplit从最后一个下划线分割）
+                label = col.rsplit('_', 1)[-1]
                 
                 # 将0值（缺考）转换为None
                 ranks.append(None if val == 0 else val)
@@ -814,9 +833,11 @@ with tab5:
         st.markdown("---")
         
         # 筛选出总分的年级排名列（用于计算进步得分的列）
+        # 新格式：总分年级排名_考试1 或 旧格式：总分_年级排名_考试1
         total_rank_cols = [col for col in rank_cols 
-                          if col.startswith("总分_年级排名_") or 
-                          (col.startswith("年级排名_") and not any(subj in col for subj in subjects))]
+                          if col.startswith("总分年级排名_") 
+                          or col.startswith("总分_年级排名_") 
+                          or (col.startswith("年级排名_") and not any(subj in col for subj in subjects))]
         
         # 1. 排名历史
         st.markdown("### 1️⃣ 排名历史（总分年级排名）")
@@ -825,7 +846,8 @@ with tab5:
         else:
             rank_data = []
             for col in total_rank_cols:
-                exam_label = col.replace("总分_年级排名_", "").replace("年级排名_", "")
+                # 统一使用rsplit从最后一个下划线分割提取考试标签
+                exam_label = col.rsplit('_', 1)[-1]
                 rank_val = student_data[col]
                 
                 # 检查该次考试是否有科目缺考
@@ -855,12 +877,8 @@ with tab5:
             for col in total_rank_cols:
                 rank_val = student_data[col]
                 
-                # 从列名提取考试标识
-                exam_label = None
-                if "_年级排名_" in col:
-                    exam_label = col.split("_年级排名_")[-1]
-                elif col.startswith("年级排名_"):
-                    exam_label = col.replace("年级排名_", "")
+                # 从列名提取考试标识（统一使用rsplit）
+                exam_label = col.rsplit('_', 1)[-1]
                 
                 # 检查该次考试是否有科目缺考
                 is_exam_absent = False
@@ -976,10 +994,11 @@ with tab5:
             st.markdown("### 5️⃣ 集团排名加分")
             
             # 筛选出总分的集团排名列
+            # 新格式：总分集团排名_考试1 或 旧格式：总分_集团排名_考试1
             total_group_rank_cols = [col for col in group_rank_cols 
-                                    if col.startswith("总分_集团排名_") or 
-                                    (col.startswith("集团排名_") and not any(subj in col for subj in subjects)) or
-                                    col == "总分集团排名"]
+                                    if col.startswith("总分集团排名_") 
+                                    or col.startswith("总分_集团排名_") 
+                                    or (col.startswith("集团排名_") and not any(subj in col for subj in subjects))]
             
             if total_group_rank_cols and len(total_group_rank_cols) > 0:
                 latest_group_rank = student_data[total_group_rank_cols[-1]]
