@@ -1080,7 +1080,7 @@ def _render_file_upload():
             })
             st.rerun()
     
-    # 显示已上传的文件列表
+        # 显示已上传的文件列表
     if st.session_state.history_exam_count > 0 or st.session_state.score_files:
         st.markdown("### 📋 考试成绩列表")
         
@@ -1091,6 +1091,10 @@ def _render_file_upload():
         # 显示新上传的文件，允许编辑标签
         if st.session_state.score_files:
             st.markdown("**📝 新上传的成绩 (可编辑名称)**")
+            if st.session_state.analysis_started:
+                st.caption("⚠️ 分析进行中，考试名称已锁定。如需修改，请先点击「重置」")
+            else:
+                st.caption("💡 提示：可以修改考试名称，修改后点击「开始分析」生效")
         
         for idx, file_info in enumerate(st.session_state.score_files):
             col1, col2, col3 = st.columns([2, 2, 1])
