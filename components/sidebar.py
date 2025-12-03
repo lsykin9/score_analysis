@@ -27,6 +27,7 @@ def _save_to_browser():
         "chain_bonuses": st.session_state.chain_bonuses,
         "score_bonuses": st.session_state.score_bonuses,
         "bias_penalties": st.session_state.bias_penalties,
+        "subject_references": st.session_state.get("subject_references", {}),
     }
     
     config_json = json.dumps(config, ensure_ascii=False)
@@ -60,6 +61,7 @@ def _load_from_browser():
             st.session_state.chain_bonuses = config.get("chain_bonuses", [])
             st.session_state.score_bonuses = config.get("score_bonuses", [])
             st.session_state.bias_penalties = config.get("bias_penalties", [])
+            st.session_state.subject_references = config.get("subject_references", {})
             return True
         except:
             return False
@@ -83,6 +85,7 @@ def _save_config():
                 "chain_bonuses": st.session_state.chain_bonuses,
                 "score_bonuses": st.session_state.score_bonuses,
                 "bias_penalties": st.session_state.bias_penalties,
+                "subject_references": st.session_state.get("subject_references", {}),
             }
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
@@ -118,6 +121,7 @@ def _load_config():
         st.session_state.chain_bonuses = config.get("chain_bonuses", [])
         st.session_state.score_bonuses = config.get("score_bonuses", [])
         st.session_state.bias_penalties = config.get("bias_penalties", [])
+        st.session_state.subject_references = config.get("subject_references", {})
         
         st.success("✅ 已从服务器加载配置！")
         st.rerun()
@@ -146,6 +150,7 @@ def auto_load_config():
                 st.session_state.chain_bonuses = config.get("chain_bonuses", [])
                 st.session_state.score_bonuses = config.get("score_bonuses", [])
                 st.session_state.bias_penalties = config.get("bias_penalties", [])
+                st.session_state.subject_references = config.get("subject_references", {})
             except:
                 pass
         
@@ -253,15 +258,22 @@ def _reset_to_default():
         "轻微偏科扣分": 5,
         "明显偏科扣分": 15,
         "严重偏科扣分": 30,
-        "轻微偏科_标准差": 15,
-        "轻微偏科_最大差距": 50,
-        "轻微偏科_相对离散度": 80,
-        "明显偏科_标准差": 30,
-        "明显偏科_最大差距": 100,
-        "明显偏科_相对离散度": 150,
-        "严重偏科_标准差": 60,
-        "严重偏科_最大差距": 200,
-        "严重偏科_相对离散度": 300
+        "轻微偏科_标准差": 10,
+        "明显偏科_标准差": 20,
+        "严重偏科_标准差": 30
+    }
+    
+    # 各科成绩参考线（默认值）
+    st.session_state.subject_references = {
+        "语文": 105,
+        "数学": 105,
+        "英语": 105,
+        "物理": 70,
+        "化学": 70,
+        "生物": 70,
+        "政治": 70,
+        "历史": 70,
+        "地理": 70
     }
     
     st.success("✅ 已恢复默认配置！")
@@ -816,94 +828,100 @@ def _render_bias_penalty_settings():
     st.markdown("---")
     st.subheader("偏科判定与扣分")
     
-    st.markdown("**📊 偏科判定标准**")
-    st.caption("基于各科年级排名的混合判定法：综合考虑标准差、最大差距和相对离散度")
+    # 各科成绩参考线设置
+    st.markdown("**📏 各科成绩参考线**")
+    st.caption("设置各科目的分数参考线，用于判定学生是否偏科（基于各科成绩与参考线的差值）")
     
-    # 轻微偏科阈值
-    st.markdown("**轻微偏科阈值**")
+    # 初始化subject_references
+    if 'subject_references' not in st.session_state:
+        st.session_state.subject_references = {
+            "语文": 105, "数学": 105, "英语": 105,
+            "物理": 70, "化学": 70, "生物": 70,
+            "政治": 70, "历史": 70, "地理": 70
+        }
+    
+    # 根据当前数据中的科目显示参考线设置
+    current_subjects = st.session_state.get('subjects', [])
+    
+    if current_subjects:
+        # 动态显示当前数据中的科目
+        cols = st.columns(3)
+        for idx, subject in enumerate(current_subjects):
+            with cols[idx % 3]:
+                default_val = st.session_state.subject_references.get(subject, 100)
+                st.session_state.subject_references[subject] = st.number_input(
+                    f"{subject}参考线",
+                    value=default_val,
+                    min_value=0,
+                    max_value=150,
+                    step=1,
+                    disabled=st.session_state.analysis_started,
+                    help=f"{subject}科目的分数参考线"
+                )
+    else:
+        # 如果还没有上传数据，显示常见科目
+        st.info("上传成绩数据后，将显示对应科目的参考线设置")
+        common_subjects = ["语文", "数学", "英语", "物理", "化学", "生物"]
+        cols = st.columns(3)
+        for idx, subject in enumerate(common_subjects):
+            with cols[idx % 3]:
+                default_val = st.session_state.subject_references.get(subject, 100)
+                st.session_state.subject_references[subject] = st.number_input(
+                    f"{subject}参考线",
+                    value=default_val,
+                    min_value=0,
+                    max_value=150,
+                    step=1,
+                    disabled=st.session_state.analysis_started,
+                    help=f"{subject}科目的分数参考线"
+                )
+    
+    st.markdown("---")
+    
+    # 偏科判定标准
+    st.markdown("**📊 偏科判定标准**")
+    st.caption("基于各科成绩与参考线差值的标准差进行判定")
+    
+    st.markdown("""
+    **判定逻辑：**
+    1. 计算各科差值 = 实际成绩 - 参考线
+    2. 计算差值的标准差（反映各科表现的离散程度）
+    3. 根据标准差判定偏科等级
+    
+    **示例：** 标准差越大，说明各科成绩相对参考线的表现越不均衡
+    """)
+    
+    # 偏科阈值设置
     col1, col2, col3 = st.columns(3)
     with col1:
+        st.markdown("**轻微偏科**")
         st.session_state.config_params["轻微偏科_标准差"] = st.number_input(
-            "标准差", 
-            value=st.session_state.config_params.get("轻微偏科_标准差", 15), 
-            step=1, 
+            "差值标准差阈值",
+            value=st.session_state.config_params.get("轻微偏科_标准差", 10),
             min_value=0,
+            step=1,
             disabled=st.session_state.analysis_started,
-            help="各科排名的标准差阈值"
+            help="各科差值标准差 > 此阈值判定为轻微偏科"
         )
     with col2:
-        st.session_state.config_params["轻微偏科_最大差距"] = st.number_input(
-            "最大差距", 
-            value=st.session_state.config_params.get("轻微偏科_最大差距", 50), 
-            step=5, 
+        st.markdown("**明显偏科**")
+        st.session_state.config_params["明显偏科_标准差"] = st.number_input(
+            "差值标准差阈值 ",
+            value=st.session_state.config_params.get("明显偏科_标准差", 20),
             min_value=0,
+            step=1,
             disabled=st.session_state.analysis_started,
-            help="最好和最差科目的排名差距"
+            help="各科差值标准差 > 此阈值判定为明显偏科"
         )
     with col3:
-        st.session_state.config_params["轻微偏科_相对离散度"] = st.number_input(
-            "离散度(%)", 
-            value=st.session_state.config_params.get("轻微偏科_相对离散度", 80), 
-            step=5, 
-            min_value=0,
-            disabled=st.session_state.analysis_started,
-            help="最大差距占平均排名的百分比"
-        )
-    
-    # 明显偏科阈值
-    st.markdown("**明显偏科阈值**")
-    col4, col5, col6 = st.columns(3)
-    with col4:
-        st.session_state.config_params["明显偏科_标准差"] = st.number_input(
-            "标准差 ", 
-            value=st.session_state.config_params.get("明显偏科_标准差", 30), 
-            step=1, 
-            min_value=0,
-            disabled=st.session_state.analysis_started
-        )
-    with col5:
-        st.session_state.config_params["明显偏科_最大差距"] = st.number_input(
-            "最大差距 ", 
-            value=st.session_state.config_params.get("明显偏科_最大差距", 100), 
-            step=5, 
-            min_value=0,
-            disabled=st.session_state.analysis_started
-        )
-    with col6:
-        st.session_state.config_params["明显偏科_相对离散度"] = st.number_input(
-            "离散度(%) ", 
-            value=st.session_state.config_params.get("明显偏科_相对离散度", 150), 
-            step=5, 
-            min_value=0,
-            disabled=st.session_state.analysis_started
-        )
-    
-    # 严重偏科阈值
-    st.markdown("**严重偏科阈值**")
-    col7, col8, col9 = st.columns(3)
-    with col7:
+        st.markdown("**严重偏科**")
         st.session_state.config_params["严重偏科_标准差"] = st.number_input(
-            "标准差  ", 
-            value=st.session_state.config_params.get("严重偏科_标准差", 60), 
-            step=1, 
+            "差值标准差阈值  ",
+            value=st.session_state.config_params.get("严重偏科_标准差", 30),
             min_value=0,
-            disabled=st.session_state.analysis_started
-        )
-    with col8:
-        st.session_state.config_params["严重偏科_最大差距"] = st.number_input(
-            "最大差距  ", 
-            value=st.session_state.config_params.get("严重偏科_最大差距", 200), 
-            step=10, 
-            min_value=0,
-            disabled=st.session_state.analysis_started
-        )
-    with col9:
-        st.session_state.config_params["严重偏科_相对离散度"] = st.number_input(
-            "离散度(%)  ", 
-            value=st.session_state.config_params.get("严重偏科_相对离散度", 300), 
-            step=10, 
-            min_value=0,
-            disabled=st.session_state.analysis_started
+            step=1,
+            disabled=st.session_state.analysis_started,
+            help="各科差值标准差 > 此阈值判定为严重偏科"
         )
     
     # 扣分设置

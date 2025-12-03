@@ -128,16 +128,16 @@ def process_data():
         "bonus_line_a": cfg.get("A线过线奖励", cfg.get("过线奖励", 5)),
         "line_b": int(cfg.get("B线（排名）", 500)),
         "bonus_line_b": cfg.get("B线过线奖励", 3),
-        # 偏科判定阈值
-        "轻微偏科_标准差": cfg.get("轻微偏科_标准差", 15),
-        "轻微偏科_最大差距": cfg.get("轻微偏科_最大差距", 50),
-        "轻微偏科_相对离散度": cfg.get("轻微偏科_相对离散度", 80),
-        "明显偏科_标准差": cfg.get("明显偏科_标准差", 30),
-        "明显偏科_最大差距": cfg.get("明显偏科_最大差距", 100),
-        "明显偏科_相对离散度": cfg.get("明显偏科_相对离散度", 150),
-        "严重偏科_标准差": cfg.get("严重偏科_标准差", 60),
-        "严重偏科_最大差距": cfg.get("严重偏科_最大差距", 200),
-        "严重偏科_相对离散度": cfg.get("严重偏科_相对离散度", 300)
+        # 偏科判定阈值（新方法：基于差值标准差）
+        "轻微偏科_标准差": cfg.get("轻微偏科_标准差", 10),
+        "明显偏科_标准差": cfg.get("明显偏科_标准差", 20),
+        "严重偏科_标准差": cfg.get("严重偏科_标准差", 30),
+        # 各科成绩参考线
+        "subject_references": st.session_state.get("subject_references", {
+            "语文": 105, "数学": 105, "英语": 105,
+            "物理": 70, "化学": 70, "生物": 70,
+            "政治": 70, "历史": 70, "地理": 70
+        })
     }
     
     # 定义科目
@@ -540,7 +540,7 @@ def process_data():
         bias_level = "均衡发展"
         if not is_absent and has_subjects:
             # 构建各科分数字典
-            latest_scores = {"姓名": name}
+            latest_scores = {"_name": name}
             for subj, col in subject_cols_dict.items():
                 latest_scores[subj] = row[col]
             
@@ -548,8 +548,10 @@ def process_data():
             subject_ranks = {}
             for subj in subjects:
                 # 查找该科目的所有年级排名列
+                # 新格式：语文年级排名_考试1 或 旧格式：语文_年级排名_考试1
                 subj_rank_cols = [col for col in df_all.columns 
-                                 if col.startswith(f"{subj}_年级排名_")]
+                                 if col.startswith(f"{subj}年级排名_") 
+                                 or col.startswith(f"{subj}_年级排名_")]
                 if subj_rank_cols:
                     # 取最后一次（最新）的排名
                     latest_rank_col = subj_rank_cols[-1]
@@ -557,7 +559,7 @@ def process_data():
                     if pd.notna(rank_val) and rank_val > 0:
                         subject_ranks[subj] = int(rank_val)
             
-            # 调用偏科检测（传入排名和配置）
+            # 调用偏科检测（传入成绩、排名和配置）
             bias_info = detect_subject_bias(latest_scores, subjects, subject_ranks, config)
             bias_level = bias_info["偏科等级"]
             bias_deduct = bias_penalty_score(bias_level, config)
@@ -604,17 +606,18 @@ def process_data():
             penalty = bias_penalty_score(bias_info["偏科等级"], config)
             bias_results.append({
                 "姓名": name,
-                "排名标准差": bias_info.get("排名标准差", bias_info.get("标准差", 0)),
-                "最大排名差": bias_info.get("最大排名差", 0),
-                "相对离散度": bias_info.get("相对离散度", 0),
-                "平均排名": bias_info.get("平均排名", 0),
+                "差值标准差": bias_info.get("差值标准差", 0),
+                "平均差值": bias_info.get("平均差值", 0),
+                "极差": bias_info.get("极差", 0),
                 "偏科等级": bias_info["偏科等级"],
                 "最强科目": bias_info["最强科目"],
+                "最强科差值": bias_info.get("最强科差值", 0),
                 "最弱科目": bias_info["最弱科目"],
+                "最弱科差值": bias_info.get("最弱科差值", 0),
                 "扣分": penalty
             })
         df_bias = pd.DataFrame(bias_results)
-        df_bias = df_bias.sort_values(by="排名标准差", ascending=False)
+        df_bias = df_bias.sort_values(by="差值标准差", ascending=False)
     
     # 清理临时文件（在数据处理完成后）
     import glob

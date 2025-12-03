@@ -187,95 +187,99 @@ def total_score_bonus(total_score, config):
 # === 偏科检测（基于排名的混合法） ===
 def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
     """
-    检测学生是否偏科
-    使用排名混合判定法：综合考虑标准差、最大差距和相对离散度
+    检测学生是否偏科（新方法：基于成绩与参考线差值的标准差）
     
     参数:
         row: 学生成绩数据行（包含各科分数）
         subjects: 科目列表
-        subject_ranks: 各科排名字典 {科目: 排名}
-        config: 配置参数（包含偏科判定阈值）
+        subject_ranks: 各科排名字典 {科目: 排名}（用于辅助信息，非主要判定依据）
+        config: 配置参数（包含偏科判定阈值和各科参考线）
     
     返回:
-        dict: 包含偏科等级、最强科目、最弱科目等信息
+        dict: 包含偏科等级、最强科目、最弱科目、差值标准差等信息
     """
-    # 如果没有提供排名数据，回退到旧的分数判定法
-    if subject_ranks is None or len(subject_ranks) == 0:
-        return _detect_subject_bias_by_score(row, subjects)
+    if not config:
+        return {
+            "偏科等级": "配置错误",
+            "最强科目": "-",
+            "最弱科目": "-",
+            "差值标准差": 0,
+            "平均差值": 0,
+            "极差": 0
+        }
     
-    # 提取各科排名
-    ranks = []
-    rank_dict = {}
+    # 获取各科参考线
+    subject_references = config.get("subject_references", {})
+    
+    # 计算各科差值（成绩 - 参考线）
+    differences = []
+    diff_dict = {}
     
     for subj in subjects:
-        if subj in subject_ranks and subject_ranks[subj] is not None:
-            rank = subject_ranks[subj]
-            if pd.notna(rank) and rank > 0:
-                ranks.append(rank)
-                rank_dict[subj] = rank
+        # 获取该科成绩
+        score = row.get(subj, 0)
+        if pd.isna(score) or score <= 0:
+            continue  # 跳过缺考或无效成绩
+        
+        # 获取该科参考线
+        reference = subject_references.get(subj, 100)  # 默认100分
+        
+        # 计算差值
+        diff = score - reference
+        differences.append(diff)
+        diff_dict[subj] = diff
     
-    # 如果没有足够的排名数据，返回空结果
-    if len(ranks) < 2:
+    # 如果没有足够的有效数据
+    if len(differences) < 2:
         return {
             "偏科等级": "数据不足",
             "最强科目": "-",
             "最弱科目": "-",
-            "排名标准差": 0,
-            "最大排名差": 0,
-            "相对离散度": 0,
-            "平均排名": 0
+            "差值标准差": 0,
+            "平均差值": 0,
+            "极差": 0,
+            "最强科差值": 0,
+            "最弱科差值": 0
         }
     
     # 计算统计指标
-    ranks_array = np.array(ranks)
-    mean_rank = np.mean(ranks_array)
-    std_rank = np.std(ranks_array, ddof=1) if len(ranks) > 1 else 0
-    max_rank = np.max(ranks_array)
-    min_rank = np.min(ranks_array)
-    max_diff = max_rank - min_rank
-    relative_dispersion = (max_diff / mean_rank * 100) if mean_rank > 0 else 0
+    diff_array = np.array(differences)
+    mean_diff = np.mean(diff_array)  # 平均差值（反映整体水平）
+    std_diff = np.std(diff_array, ddof=1) if len(differences) > 1 else 0  # 标准差（反映离散程度）
+    max_diff = np.max(diff_array)  # 最大差值
+    min_diff = np.min(diff_array)  # 最小差值
+    range_diff = max_diff - min_diff  # 极差（最强科比最弱科高多少）
     
     # 找到最强和最弱科目
-    best_subject = min(rank_dict, key=rank_dict.get) if rank_dict else "-"
-    worst_subject = max(rank_dict, key=rank_dict.get) if rank_dict else "-"
+    best_subject = max(diff_dict, key=diff_dict.get) if diff_dict else "-"
+    worst_subject = min(diff_dict, key=diff_dict.get) if diff_dict else "-"
+    best_diff = diff_dict.get(best_subject, 0)
+    worst_diff = diff_dict.get(worst_subject, 0)
     
-    # 判定偏科等级（使用配置的阈值）
+    # 判定偏科等级（基于标准差）
     bias_level = "均衡发展"
     
-    if config:
-        # 严重偏科：标准差 > 阈值 AND 最大差距 > 阈值 OR 相对离散度 > 阈值
-        severe_std = config.get("严重偏科_标准差", 60)
-        severe_diff = config.get("严重偏科_最大差距", 200)
-        severe_rel = config.get("严重偏科_相对离散度", 300)
-        
-        if (std_rank > severe_std and max_diff > severe_diff) or relative_dispersion > severe_rel:
-            bias_level = "严重偏科"
-        else:
-            # 明显偏科
-            obvious_std = config.get("明显偏科_标准差", 30)
-            obvious_diff = config.get("明显偏科_最大差距", 100)
-            obvious_rel = config.get("明显偏科_相对离散度", 150)
-            
-            if (std_rank > obvious_std and max_diff > obvious_diff) or relative_dispersion > obvious_rel:
-                bias_level = "明显偏科"
-            else:
-                # 轻微偏科
-                mild_std = config.get("轻微偏科_标准差", 15)
-                mild_diff = config.get("轻微偏科_最大差距", 50)
-                mild_rel = config.get("轻微偏科_相对离散度", 80)
-                
-                if std_rank > mild_std or max_diff > mild_diff or relative_dispersion > mild_rel:
-                    bias_level = "轻微偏科"
+    severe_std = config.get("严重偏科_标准差", 30)
+    obvious_std = config.get("明显偏科_标准差", 20)
+    mild_std = config.get("轻微偏科_标准差", 10)
+    
+    if std_diff >= severe_std:
+        bias_level = "严重偏科"
+    elif std_diff >= obvious_std:
+        bias_level = "明显偏科"
+    elif std_diff >= mild_std:
+        bias_level = "轻微偏科"
     
     return {
         "偏科等级": bias_level,
         "最强科目": best_subject,
         "最弱科目": worst_subject,
-        "排名标准差": round(std_rank, 2),
-        "最大排名差": int(max_diff),
-        "相对离散度": round(relative_dispersion, 2),
-        "平均排名": round(mean_rank, 2),
-        "各科排名": rank_dict
+        "差值标准差": round(std_diff, 2),
+        "平均差值": round(mean_diff, 2),
+        "极差": round(range_diff, 2),
+        "最强科差值": round(best_diff, 2),
+        "最弱科差值": round(worst_diff, 2),
+        "各科差值": diff_dict
     }
 
 
