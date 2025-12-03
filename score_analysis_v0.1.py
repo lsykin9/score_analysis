@@ -188,6 +188,7 @@ def total_score_bonus(total_score, config):
 def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
     """
     检测学生是否偏科（新方法：基于成绩与参考线差值的标准差）
+    注意：化学和生物会合并为"选科"进行分析
     
     参数:
         row: 学生成绩数据行（包含各科分数）
@@ -210,23 +211,49 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
     # 获取各科参考线
     subject_references = config.get("subject_references", {})
     
+    # 处理科目列表：将化学和生物合并为选科
+    analysis_subjects = []
+    has_chem = "化学" in subjects
+    has_bio = "生物" in subjects
+    
+    for subj in subjects:
+        if subj not in ["化学", "生物"]:
+            analysis_subjects.append(subj)
+    
+    # 如果有化学或生物，添加"选科"
+    if has_chem or has_bio:
+        analysis_subjects.append("选科")
+    
     # 计算各科差值（成绩 - 参考线）
     differences = []
     diff_dict = {}
     
-    for subj in subjects:
-        # 获取该科成绩
-        score = row.get(subj, 0)
-        if pd.isna(score) or score <= 0:
-            continue  # 跳过缺考或无效成绩
-        
-        # 获取该科参考线
-        reference = subject_references.get(subj, 100)  # 默认100分
-        
-        # 计算差值
-        diff = score - reference
-        differences.append(diff)
-        diff_dict[subj] = diff
+    for subj in analysis_subjects:
+        if subj == "选科":
+            # 计算选科成绩 = 化学 + 生物
+            chem_score = row.get("化学", 0) if has_chem else 0
+            bio_score = row.get("生物", 0) if has_bio else 0
+            
+            # 如果化学或生物有一科缺考（0或NaN），则选科也算缺考
+            if (has_chem and (pd.isna(chem_score) or chem_score <= 0)) or \
+               (has_bio and (pd.isna(bio_score) or bio_score <= 0)):
+                continue
+            
+            total_score = chem_score + bio_score
+            reference = subject_references.get("选科", 140)
+            diff = total_score - reference
+            differences.append(diff)
+            diff_dict["选科"] = diff
+        else:
+            # 其他科目正常处理
+            score = row.get(subj, 0)
+            if pd.isna(score) or score <= 0:
+                continue  # 跳过缺考或无效成绩
+            
+            reference = subject_references.get(subj, 100)
+            diff = score - reference
+            differences.append(diff)
+            diff_dict[subj] = diff
     
     # 如果没有足够的有效数据
     if len(differences) < 2:
@@ -246,7 +273,6 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
     std_diff = np.std(diff_array, ddof=1) if len(differences) > 1 else 0  # 标准差（反映离散程度）
     max_diff = np.max(diff_array)  # 最大差值
     min_diff = np.min(diff_array)  # 最小差值
-    range_diff = max_diff - min_diff  # 极差（最强科比最弱科高多少）
     
     # 找到最强和最弱科目
     best_subject = max(diff_dict, key=diff_dict.get) if diff_dict else "-"

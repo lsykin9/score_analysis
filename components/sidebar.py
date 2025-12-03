@@ -269,8 +269,7 @@ def _reset_to_default():
         "数学": 105,
         "英语": 105,
         "物理": 70,
-        "化学": 70,
-        "生物": 70,
+        "选科": 140,  # 选科 = 化学 + 生物
         "政治": 70,
         "历史": 70,
         "地理": 70
@@ -831,12 +830,13 @@ def _render_bias_penalty_settings():
     # 各科成绩参考线设置
     st.markdown("**📏 各科成绩参考线**")
     st.caption("设置各科目的分数参考线，用于判定学生是否偏科（基于各科成绩与参考线的差值）")
+    st.info("💡 注意：偏科分析时，化学和生物会合并为'选科'整体分析")
     
     # 初始化subject_references
     if 'subject_references' not in st.session_state:
         st.session_state.subject_references = {
             "语文": 105, "数学": 105, "英语": 105,
-            "物理": 70, "化学": 70, "生物": 70,
+            "物理": 70, "选科": 140,  # 选科 = 化学 + 生物
             "政治": 70, "历史": 70, "地理": 70
         }
     
@@ -844,37 +844,74 @@ def _render_bias_penalty_settings():
     current_subjects = st.session_state.get('subjects', [])
     
     if current_subjects:
-        # 动态显示当前数据中的科目
+        # 检查是否同时有化学和生物
+        has_chem = "化学" in current_subjects
+        has_bio = "生物" in current_subjects
+        
+        # 动态显示当前数据中的科目（化学和生物合并为选科）
+        display_subjects = []
+        for subj in current_subjects:
+            if subj not in ["化学", "生物"]:
+                display_subjects.append(subj)
+        
+        # 如果有化学或生物，添加"选科"
+        if has_chem or has_bio:
+            display_subjects.append("选科")
+        
         cols = st.columns(3)
-        for idx, subject in enumerate(current_subjects):
+        for idx, subject in enumerate(display_subjects):
             with cols[idx % 3]:
-                default_val = st.session_state.subject_references.get(subject, 100)
-                st.session_state.subject_references[subject] = st.number_input(
-                    f"{subject}参考线",
-                    value=default_val,
-                    min_value=0,
-                    max_value=150,
-                    step=1,
-                    disabled=st.session_state.analysis_started,
-                    help=f"{subject}科目的分数参考线"
-                )
+                if subject == "选科":
+                    default_val = st.session_state.subject_references.get("选科", 140)
+                    st.session_state.subject_references["选科"] = st.number_input(
+                        "选科参考线（化学+生物）",
+                        value=default_val,
+                        min_value=0,
+                        max_value=200,
+                        step=1,
+                        disabled=st.session_state.analysis_started,
+                        help="化学和生物的总分参考线"
+                    )
+                else:
+                    default_val = st.session_state.subject_references.get(subject, 100)
+                    st.session_state.subject_references[subject] = st.number_input(
+                        f"{subject}参考线",
+                        value=default_val,
+                        min_value=0,
+                        max_value=150,
+                        step=1,
+                        disabled=st.session_state.analysis_started,
+                        help=f"{subject}科目的分数参考线"
+                    )
     else:
-        # 如果还没有上传数据，显示常见科目
+        # 如果还没有上传数据，显示常见科目（化学生物合并为选科）
         st.info("上传成绩数据后，将显示对应科目的参考线设置")
-        common_subjects = ["语文", "数学", "英语", "物理", "化学", "生物"]
+        common_subjects = ["语文", "数学", "英语", "物理", "选科"]
         cols = st.columns(3)
         for idx, subject in enumerate(common_subjects):
             with cols[idx % 3]:
-                default_val = st.session_state.subject_references.get(subject, 100)
-                st.session_state.subject_references[subject] = st.number_input(
-                    f"{subject}参考线",
-                    value=default_val,
-                    min_value=0,
-                    max_value=150,
-                    step=1,
-                    disabled=st.session_state.analysis_started,
-                    help=f"{subject}科目的分数参考线"
-                )
+                if subject == "选科":
+                    default_val = st.session_state.subject_references.get("选科", 140)
+                    st.session_state.subject_references["选科"] = st.number_input(
+                        "选科参考线（化学+生物）",
+                        value=default_val,
+                        min_value=0,
+                        max_value=200,
+                        step=1,
+                        disabled=st.session_state.analysis_started,
+                        help="化学和生物的总分参考线"
+                    )
+                else:
+                    default_val = st.session_state.subject_references.get(subject, 100)
+                    st.session_state.subject_references[subject] = st.number_input(
+                        f"{subject}参考线",
+                        value=default_val,
+                        min_value=0,
+                        max_value=150,
+                        step=1,
+                        disabled=st.session_state.analysis_started,
+                        help=f"{subject}科目的分数参考线"
+                    )
     
     st.markdown("---")
     
