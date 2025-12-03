@@ -1097,16 +1097,17 @@ def _render_file_upload():
             
             with col1:
                 # 可编辑的考试名称
+                current_label = file_info.get('exam_label', f"第{file_info['exam_num']}次考试")
                 new_label = st.text_input(
                     f"考试{idx+1}名称",
-                    value=file_info.get('exam_label', f"第{file_info['exam_num']}次考试"),
-                    key=f"label_{idx}",
+                    value=current_label,
+                    key=f"label_{idx}_{file_info['exam_num']}",  # 添加exam_num确保key唯一性
                     disabled=st.session_state.analysis_started,
                     label_visibility="collapsed",
                     placeholder="例如: 期中考试、期末考试、月考"
                 )
-                # 更新标签
-                if new_label != file_info.get('exam_label'):
+                # 实时更新标签（当用户输入时立即保存）
+                if new_label and new_label != current_label:
                     st.session_state.score_files[idx]['exam_label'] = new_label
             
             with col2:
