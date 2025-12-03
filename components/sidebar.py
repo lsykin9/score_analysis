@@ -942,23 +942,19 @@ def _render_file_upload():
             else:
                 df_history = pd.read_excel(io.BytesIO(history_file.getvalue()))
             
-            # 检测考试次数：支持两种格式
-            # 1. 旧格式：排名_xxx 或 年级排名_xxx
-            # 2. 新格式：总分_年级排名_xxx 或 科目_年级排名_xxx
+            # 检测考试次数：匹配最后一个下划线后的考试标签
+            # 支持格式：总分_考试1, 总分年级排名_考试2, 语文_考试3 等
             import re
             exam_labels_found = set()
             
             for col in df_history.columns:
-                # 旧格式：年级排名_xxx 或 排名_xxx
-                if col.startswith("排名_") or col.startswith("年级排名_"):
-                    match = re.search(r'^(?:年级)?排名_(.+)$', col)
-                    if match:
-                        exam_labels_found.add(match.group(1))
-                # 新格式：xxx_年级排名_yyy（从yyy提取考试标签）
-                elif "_年级排名_" in col:
-                    match = re.search(r'_年级排名_(.+)$', col)
-                    if match:
-                        exam_labels_found.add(match.group(1))
+                # 匹配最后一个下划线后的内容作为考试标签
+                if '_' in col and col != '姓名':
+                    # 提取最后一个下划线后的部分
+                    exam_label = col.rsplit('_', 1)[-1]
+                    # 如果包含"考试"关键字，则认为是考试标签
+                    if '考试' in exam_label or exam_label.isdigit():
+                        exam_labels_found.add(exam_label)
             
             st.session_state.history_exam_count = len(exam_labels_found)
             st.success(f"✅ 历史总表已上传 (包含 {st.session_state.history_exam_count} 次考试)")

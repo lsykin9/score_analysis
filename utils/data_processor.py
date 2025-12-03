@@ -290,21 +290,22 @@ def process_data():
                 
         elif col_count == 22:
             # 新格式：姓名 + 总分(分数、年级排名、集团排名) + 6科(每科3列)
-            # 实际列名格式：姓名、总分、总分年级排名、总分集团排名、语文、语文年级排名、语文集团排名...
+            # 原始列名：姓名、总分、总分年级排名、总分集团排名、语文、语文年级排名、语文集团排名...
+            # 目标列名：姓名、总分_考试1、总分年级排名_考试1、总分集团排名_考试1、语文_考试1、语文年级排名_考试1...
             expected_cols = ["姓名", "总分", "总分年级排名", "总分集团排名"]
             for subj in subjects:
                 expected_cols.extend([subj, f"{subj}年级排名", f"{subj}集团排名"])
             
-            # 重命名为带考试标签的格式
+            # 重命名为带考试标签的格式（只有一个下划线）
             rename_dict = {
                 "总分": f"总分_{exam_label}",
-                "总分年级排名": f"年级排名_{exam_label}",
-                "总分集团排名": f"集团排名_{exam_label}"
+                "总分年级排名": f"总分年级排名_{exam_label}",
+                "总分集团排名": f"总分集团排名_{exam_label}"
             }
             for subj in subjects:
                 rename_dict[subj] = f"{subj}_{exam_label}"
-                rename_dict[f"{subj}年级排名"] = f"{subj}_年级排名_{exam_label}"
-                rename_dict[f"{subj}集团排名"] = f"{subj}_集团排名_{exam_label}"
+                rename_dict[f"{subj}年级排名"] = f"{subj}年级排名_{exam_label}"
+                rename_dict[f"{subj}集团排名"] = f"{subj}集团排名_{exam_label}"
         
         df_renamed = df.rename(columns=rename_dict)
         
@@ -348,25 +349,33 @@ def process_data():
     
     # 分析得分
     results = []
-    # 支持两种格式的排名列：
+    # 识别排名列：支持多种格式
     # 1. 旧格式：排名_xxx 或 年级排名_xxx
-    # 2. 新格式：总分_年级排名_xxx 或 科目_年级排名_xxx
+    # 2. 新格式：总分年级排名_xxx 或 总分_年级排名_xxx
     # 只保留总分的年级排名列，排除单科排名
     rank_cols = []
     for col in df_all.columns:
-        # 只处理总分的年级排名列
-        if col.startswith("总分_年级排名_") or col == "年级排名" or col.startswith("年级排名_"):
-            # 排除科目排名列
-            is_subject_rank = any(col.startswith(f"{subj}_年级排名_") for subj in subjects)
+        # 新格式：总分年级排名_xxx
+        if col.startswith("总分年级排名_"):
+            rank_cols.append(col)
+        # 旧格式：总分_年级排名_xxx
+        elif col.startswith("总分_年级排名_"):
+            rank_cols.append(col)
+        # 旧格式：年级排名_xxx 或 年级排名（单列）
+        elif col == "年级排名" or col.startswith("年级排名_"):
+            # 排除科目排名列（如：语文年级排名_xxx）
+            is_subject_rank = any(col.startswith(f"{subj}年级排名_") for subj in subjects)
             if not is_subject_rank:
                 rank_cols.append(col)
     
-    # 集团排名列
+    # 集团排名列：支持多种格式
     group_rank_cols = []
     for col in df_all.columns:
-        if col.startswith("集团排名_"):
+        # 新格式：总分集团排名_xxx
+        if col.startswith("总分集团排名_"):
             group_rank_cols.append(col)
-        elif "_集团排名_" in col:
+        # 旧格式：集团排名_xxx 或 总分_集团排名_xxx
+        elif col.startswith("集团排名_") or col.startswith("总分_集团排名_"):
             group_rank_cols.append(col)
     
     # 总分列（排除年级排名和集团排名列）
