@@ -258,12 +258,12 @@ def _reset_to_default():
         "轻微偏科扣分": 5,
         "明显偏科扣分": 15,
         "严重偏科扣分": 30,
-        "轻微偏科_标准差": 10,
-        "明显偏科_标准差": 20,
-        "严重偏科_标准差": 30
+        "轻微偏科_标准差": 5,
+        "明显偏科_标准差": 10,
+        "严重偏科_标准差": 15
     }
     
-    # 各科成绩参考线（默认值）
+    # 各科成绩参考线（默认值，实际分数形式）
     st.session_state.subject_references = {
         "语文": 105,
         "数学": 105,
@@ -828,11 +828,11 @@ def _render_bias_penalty_settings():
     st.subheader("偏科判定与扣分")
     
     # 各科成绩参考线设置
-    st.markdown("**📏 各科成绩参考线**")
-    st.caption("设置各科目的分数参考线，用于判定学生是否偏科（基于各科成绩与参考线的差值）")
-    st.info("💡 注意：偏科分析时，化学和生物会合并为'选科'整体分析")
+    st.markdown("**📏 各科成绩参考线（实际分数）**")
+    st.caption("设置各科目的分数参考线，用于判定学生是否偏科（基于各科得分率与参考线的差值）")
+    st.info("💡 注意：偏科分析时，化学和生物会合并为'选科'整体分析。请输入实际分数，程序会自动转换为得分率进行比较")
     
-    # 初始化subject_references
+    # 初始化subject_references（实际分数形式，内部会转换为百分比）
     if 'subject_references' not in st.session_state:
         st.session_state.subject_references = {
             "语文": 105, "数学": 105, "英语": 105,
@@ -863,26 +863,37 @@ def _render_bias_penalty_settings():
             with cols[idx % 3]:
                 if subject == "选科":
                     default_val = st.session_state.subject_references.get("选科", 140)
-                    st.session_state.subject_references["选科"] = st.number_input(
+                    score_input = st.number_input(
                         "选科参考线",
                         value=default_val,
                         min_value=0,
                         max_value=200,
                         step=1,
                         disabled=st.session_state.analysis_started,
-                        help="化学和生物的总分参考线"
+                        help="选科（化学+生物）的总分参考线，满分200分"
                     )
+                    # 转换为百分比存储（内部使用）
+                    st.session_state.subject_references["选科"] = score_input
                 else:
-                    default_val = st.session_state.subject_references.get(subject, 100)
-                    st.session_state.subject_references[subject] = st.number_input(
+                    # 根据科目确定满分
+                    if subject in ["语文", "数学", "英语"]:
+                        max_score = 150
+                        default_val = st.session_state.subject_references.get(subject, 105)
+                    else:  # 物理、政治、历史、地理等
+                        max_score = 100
+                        default_val = st.session_state.subject_references.get(subject, 70)
+                    
+                    score_input = st.number_input(
                         f"{subject}参考线",
                         value=default_val,
                         min_value=0,
-                        max_value=150,
+                        max_value=max_score,
                         step=1,
                         disabled=st.session_state.analysis_started,
-                        help=f"{subject}科目的分数参考线"
+                        help=f"{subject}科目的分数参考线，满分{max_score}分"
                     )
+                    # 直接存储分数（内部使用时会转换为百分比）
+                    st.session_state.subject_references[subject] = score_input
     else:
         # 如果还没有上传数据，显示常见科目（化学生物合并为选科）
         st.info("上传成绩数据后，将显示对应科目的参考线设置")
@@ -892,38 +903,48 @@ def _render_bias_penalty_settings():
             with cols[idx % 3]:
                 if subject == "选科":
                     default_val = st.session_state.subject_references.get("选科", 140)
-                    st.session_state.subject_references["选科"] = st.number_input(
+                    score_input = st.number_input(
                         "选科参考线",
                         value=default_val,
                         min_value=0,
                         max_value=200,
                         step=1,
                         disabled=st.session_state.analysis_started,
-                        help="化学和生物的总分参考线"
+                        help="选科（化学+生物）的总分参考线，满分200分"
                     )
+                    st.session_state.subject_references["选科"] = score_input
                 else:
-                    default_val = st.session_state.subject_references.get(subject, 100)
-                    st.session_state.subject_references[subject] = st.number_input(
+                    # 根据科目确定满分和默认值
+                    if subject in ["语文", "数学", "英语"]:
+                        max_score = 150
+                        default_val = st.session_state.subject_references.get(subject, 105)
+                    else:  # 物理
+                        max_score = 100
+                        default_val = st.session_state.subject_references.get(subject, 70)
+                    
+                    score_input = st.number_input(
                         f"{subject}参考线",
                         value=default_val,
                         min_value=0,
-                        max_value=150,
+                        max_value=max_score,
                         step=1,
                         disabled=st.session_state.analysis_started,
-                        help=f"{subject}科目的分数参考线"
+                        help=f"{subject}科目的分数参考线，满分{max_score}分"
                     )
+                    st.session_state.subject_references[subject] = score_input
     
     st.markdown("---")
     
     # 偏科判定标准
     st.markdown("**📊 偏科判定标准**")
-    st.caption("基于各科成绩与参考线差值的标准差进行判定")
+    st.caption("基于各科得分率与参考线百分比差值的标准差进行判定")
     
     st.markdown("""
     **判定逻辑：**
-    1. 计算各科差值 = 实际成绩 - 参考线
-    2. 计算差值的标准差（反映各科表现的离散程度）
-    3. 根据标准差判定偏科等级
+    1. 将各科成绩转换为得分率（百分比）
+    2. 计算各科差值 = 实际得分率 - 参考线百分比
+    3. 计算差值的标准差（反映各科表现的离散程度）
+    4. 根据标准差判定偏科等级
     
     **示例：** 标准差越大，说明各科成绩相对参考线的表现越不均衡
     """)
@@ -934,31 +955,31 @@ def _render_bias_penalty_settings():
         st.markdown("**轻微偏科**")
         st.session_state.config_params["轻微偏科_标准差"] = st.number_input(
             "差值标准差阈值",
-            value=st.session_state.config_params.get("轻微偏科_标准差", 10),
+            value=st.session_state.config_params.get("轻微偏科_标准差", 5),
             min_value=0,
             step=1,
             disabled=st.session_state.analysis_started,
-            help="各科差值标准差 > 此阈值判定为轻微偏科"
+            help="各科得分率差值标准差 > 此阈值判定为轻微偏科（百分比单位）"
         )
     with col2:
         st.markdown("**明显偏科**")
         st.session_state.config_params["明显偏科_标准差"] = st.number_input(
             "差值标准差阈值 ",
-            value=st.session_state.config_params.get("明显偏科_标准差", 20),
+            value=st.session_state.config_params.get("明显偏科_标准差", 10),
             min_value=0,
             step=1,
             disabled=st.session_state.analysis_started,
-            help="各科差值标准差 > 此阈值判定为明显偏科"
+            help="各科得分率差值标准差 > 此阈值判定为明显偏科（百分比单位）"
         )
     with col3:
         st.markdown("**严重偏科**")
         st.session_state.config_params["严重偏科_标准差"] = st.number_input(
             "差值标准差阈值  ",
-            value=st.session_state.config_params.get("严重偏科_标准差", 30),
+            value=st.session_state.config_params.get("严重偏科_标准差", 15),
             min_value=0,
             step=1,
             disabled=st.session_state.analysis_started,
-            help="各科差值标准差 > 此阈值判定为严重偏科"
+            help="各科得分率差值标准差 > 此阈值判定为严重偏科（百分比单位）"
         )
     
     # 扣分设置

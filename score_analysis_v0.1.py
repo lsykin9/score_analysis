@@ -187,14 +187,14 @@ def total_score_bonus(total_score, config):
 # === 偏科检测（基于排名的混合法） ===
 def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
     """
-    检测学生是否偏科（新方法：基于成绩与参考线差值的标准差）
+    检测学生是否偏科（新方法：基于成绩百分比与参考线百分比差值的标准差）
     注意：化学和生物会合并为"选科"进行分析
     
     参数:
         row: 学生成绩数据行（包含各科分数）
         subjects: 科目列表
         subject_ranks: 各科排名字典 {科目: 排名}（用于辅助信息，非主要判定依据）
-        config: 配置参数（包含偏科判定阈值和各科参考线）
+        config: 配置参数（包含偏科判定阈值和各科参考线分数）
     
     返回:
         dict: 包含偏科等级、最强科目、最弱科目、差值标准差等信息
@@ -208,8 +208,20 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
             "平均差值": 0
         }
     
-    # 获取各科参考线
+    # 获取各科参考线（分数形式）
     subject_references = config.get("subject_references", {})
+    
+    # 定义各科满分
+    subject_max_scores = {
+        "语文": 150,
+        "数学": 150,
+        "英语": 150,
+        "物理": 100,
+        "选科": 200,  # 化学100 + 生物100
+        "政治": 100,
+        "历史": 100,
+        "地理": 100
+    }
     
     # 处理科目列表：将化学和生物合并为选科
     analysis_subjects = []
@@ -224,7 +236,7 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
     if has_chem or has_bio:
         analysis_subjects.append("选科")
     
-    # 计算各科差值（成绩 - 参考线）
+    # 计算各科差值（成绩百分比 - 参考线百分比）
     differences = []
     diff_dict = {}
     
@@ -240,8 +252,14 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
                 continue
             
             total_score = chem_score + bio_score
-            reference = subject_references.get("选科", 140)
-            diff = total_score - reference
+            max_score = subject_max_scores.get("选科", 200)
+            score_percentage = (total_score / max_score) * 100  # 转换为百分比
+            
+            # 将参考线分数转换为百分比
+            reference_score = subject_references.get("选科", 140)
+            reference_percentage = (reference_score / max_score) * 100
+            
+            diff = score_percentage - reference_percentage
             differences.append(diff)
             diff_dict["选科"] = diff
         else:
@@ -250,8 +268,14 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
             if pd.isna(score) or score <= 0:
                 continue  # 跳过缺考或无效成绩
             
-            reference = subject_references.get(subj, 100)
-            diff = score - reference
+            max_score = subject_max_scores.get(subj, 150)
+            score_percentage = (score / max_score) * 100  # 转换为百分比
+            
+            # 将参考线分数转换为百分比
+            reference_score = subject_references.get(subj, 70 if max_score == 100 else 105)
+            reference_percentage = (reference_score / max_score) * 100
+            
+            diff = score_percentage - reference_percentage
             differences.append(diff)
             diff_dict[subj] = diff
     
@@ -283,9 +307,9 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
     # 判定偏科等级（基于标准差）
     bias_level = "均衡发展"
     
-    severe_std = config.get("严重偏科_标准差", 30)
-    obvious_std = config.get("明显偏科_标准差", 20)
-    mild_std = config.get("轻微偏科_标准差", 10)
+    severe_std = config.get("严重偏科_标准差", 15)
+    obvious_std = config.get("明显偏科_标准差", 10)
+    mild_std = config.get("轻微偏科_标准差", 5)
     
     if std_diff >= severe_std:
         bias_level = "严重偏科"
