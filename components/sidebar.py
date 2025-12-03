@@ -864,7 +864,7 @@ def _render_bias_penalty_settings():
                 if subject == "选科":
                     default_val = st.session_state.subject_references.get("选科", 140)
                     st.session_state.subject_references["选科"] = st.number_input(
-                        "选科参考线（化学+生物）",
+                        "选科参考线",
                         value=default_val,
                         min_value=0,
                         max_value=200,
@@ -893,7 +893,7 @@ def _render_bias_penalty_settings():
                 if subject == "选科":
                     default_val = st.session_state.subject_references.get("选科", 140)
                     st.session_state.subject_references["选科"] = st.number_input(
-                        "选科参考线（化学+生物）",
+                        "选科参考线",
                         value=default_val,
                         min_value=0,
                         max_value=200,
