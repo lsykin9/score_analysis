@@ -595,7 +595,6 @@ with tab3:
             format_dict = {
                 "差值标准差": "{:.2f}",
                 "平均差值": "{:.2f}",
-                "极差": "{:.2f}",
                 "最强科差值": "{:.2f}",
                 "最弱科差值": "{:.2f}",
                 "扣分": "{:.0f}"
@@ -1039,7 +1038,6 @@ with tab5:
                 st.write(f"**平均差值**: {bias_info['平均差值']:.2f}分（整体水平）")
                 st.write(f"**最强科目**: {bias_info['最强科目']}（超参考线{bias_info['最强科差值']:.1f}分）")
                 st.write(f"**最弱科目**: {bias_info['最弱科目']}（{'超' if bias_info['最弱科差值'] >= 0 else '低于'}参考线{abs(bias_info['最弱科差值']):.1f}分）")
-                st.write(f"**极差**: {bias_info['极差']:.1f}分（最强科比最弱科高）")
                 st.write(f"**偏科扣分**: {student_score['偏科扣分']:.1f}")
         
         # 8. 总得分

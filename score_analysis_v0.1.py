@@ -204,8 +204,7 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
             "最强科目": "-",
             "最弱科目": "-",
             "差值标准差": 0,
-            "平均差值": 0,
-            "极差": 0
+            "平均差值": 0
         }
     
     # 获取各科参考线
@@ -237,7 +236,6 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
             "最弱科目": "-",
             "差值标准差": 0,
             "平均差值": 0,
-            "极差": 0,
             "最强科差值": 0,
             "最弱科差值": 0
         }
@@ -276,7 +274,6 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
         "最弱科目": worst_subject,
         "差值标准差": round(std_diff, 2),
         "平均差值": round(mean_diff, 2),
-        "极差": round(range_diff, 2),
         "最强科差值": round(best_diff, 2),
         "最弱科差值": round(worst_diff, 2),
         "各科差值": diff_dict

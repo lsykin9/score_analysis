@@ -608,7 +608,6 @@ def process_data():
                 "姓名": name,
                 "差值标准差": bias_info.get("差值标准差", 0),
                 "平均差值": bias_info.get("平均差值", 0),
-                "极差": bias_info.get("极差", 0),
                 "偏科等级": bias_info["偏科等级"],
                 "最强科目": bias_info["最强科目"],
                 "最强科差值": bias_info.get("最强科差值", 0),
