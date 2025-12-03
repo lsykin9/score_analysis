@@ -962,8 +962,8 @@ with tab5:
         st.write(f"**连续进步次数**: {int(student_score['连续进步次数'])}")
         st.write(f"**连续进步加分**: {student_score['连续进步加分']:.1f}")
         
-        # 调试信息
-        if len(total_rank_cols) == 1:
+        # 调试信息：只有在只有1次考试但连续进步次数不为0时才显示警告
+        if len(total_rank_cols) == 1 and int(student_score['连续进步次数']) > 0:
             st.warning("⚠️ 只有1次考试数据，理论上不应该有连续进步。这可能是计算错误。")
         
         # 显示连续进步配置
