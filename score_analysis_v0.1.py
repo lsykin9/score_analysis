@@ -206,7 +206,9 @@ def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
             "最强科目": "-",
             "最弱科目": "-",
             "差值标准差": 0,
-            "平均差值": 0
+            "平均差值": 0,
+            "最强科差值": 0,
+            "最弱科差值": 0
         }
     
     # 获取各科参考线（分数形式）

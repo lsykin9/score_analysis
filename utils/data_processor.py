@@ -445,7 +445,19 @@ def process_data():
                     ranks.append(0)
         
         # 检测最新一次考试是否缺考
-        is_absent = (ranks[-1] == 0) if ranks else False
+        # 优先检查科目成绩，如果有科目成绩且任一科为0或空则算缺考
+        # 否则看总分排名是否为0
+        is_absent = False
+        if has_subjects and subject_cols_dict:
+            # 检查最新一次考试的各科成绩
+            for subj, col in subject_cols_dict.items():
+                score = row[col]
+                if pd.isna(score) or score == 0:
+                    is_absent = True
+                    break
+        else:
+            # 没有科目成绩时，根据排名判断
+            is_absent = (ranks[-1] == 0) if ranks else False
         
         chain_len = 0
         chain_progress = 0.0
@@ -567,10 +579,30 @@ def process_data():
             
             bias_dict[name] = bias_info
         elif is_absent:
-            # 缺考时标记为"缺考"
+            # 缺考时标记为"缺考"，并设置完整的字段
             bias_level = "缺考"
             if name not in bias_dict:
-                bias_dict[name] = {"偏科等级": "缺考"}
+                bias_dict[name] = {
+                    "偏科等级": "缺考",
+                    "最强科目": "-",
+                    "最弱科目": "-",
+                    "差值标准差": 0,
+                    "平均差值": 0,
+                    "最强科差值": 0,
+                    "最弱科差值": 0
+                }
+        else:
+            # 其他情况（没有科目成绩或数据不完整）
+            if has_subjects and name not in bias_dict:
+                bias_dict[name] = {
+                    "偏科等级": "数据不足",
+                    "最强科目": "-",
+                    "最弱科目": "-",
+                    "差值标准差": 0,
+                    "平均差值": 0,
+                    "最强科差值": 0,
+                    "最弱科差值": 0
+                }
         
         # 总得分
         total = chain_progress + rank_add + group_rank_add + chain_add + score_add + bias_deduct
@@ -604,6 +636,15 @@ def process_data():
     if has_subjects:
         bias_results = []
         for name, bias_info in bias_dict.items():
+            # 检查bias_info是否完整
+            required_keys = ["偏科等级", "最强科目", "最弱科目", "差值标准差", "平均差值", "最强科差值", "最弱科差值"]
+            missing_keys = [key for key in required_keys if key not in bias_info]
+            
+            if missing_keys:
+                st.error(f"⚠️ 学生 {name} 的偏科检测数据不完整，缺少字段: {missing_keys}")
+                st.error(f"实际返回的数据: {bias_info}")
+                continue
+            
             penalty = bias_penalty_score(bias_info["偏科等级"], config)
             bias_results.append({
                 "姓名": name,
