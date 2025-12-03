@@ -368,7 +368,7 @@ def process_data():
             if not is_subject_rank:
                 rank_cols.append(col)
     
-    # 集团排名列：支持多种格式
+    # 集团排名列：支持多种格式（必须带考试标识）
     group_rank_cols = []
     for col in df_all.columns:
         # 新格式：总分集团排名_xxx
@@ -513,10 +513,11 @@ def process_data():
         group_rank_add = 0
         if not is_absent and group_rank_cols and len(group_rank_cols) > 0:
             # 筛选出总分的集团排名列
+            # 支持多种格式：总分_集团排名_xxx, 总分集团排名_xxx, 集团排名_xxx（不包含科目名）
             total_group_rank_cols = [col for col in group_rank_cols 
-                                    if col.startswith("总分_集团排名_") or 
-                                    (col.startswith("集团排名_") and not any(subj in col for subj in subjects)) or
-                                    col == "总分集团排名"]
+                                    if col.startswith("总分集团排名_") or 
+                                    col.startswith("总分_集团排名_") or 
+                                    (col.startswith("集团排名_") and not any(subj in col for subj in subjects))]
             
             if total_group_rank_cols and len(total_group_rank_cols) > 0:
                 latest_group_rank = row[total_group_rank_cols[-1]]

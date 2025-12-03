@@ -141,7 +141,8 @@ def group_ranking_bonus(group_rank, config):
     if "group_rank_bonus" not in config:
         return 0
     
-    # 找到最小的满足条件的阈值
+    # 找到最小的满足条件的阈值（即最接近但大于等于排名的阈值）
+    # 例如：排名54，应该匹配100而不是50（因为54>50，不满足<=50的条件）
     min_threshold = float("inf")
     bonus = 0
     for threshold, b in config["group_rank_bonus"].items():
