@@ -593,14 +593,15 @@ with tab3:
         if len(biased_students) > 0:
             # 格式化显示
             format_dict = {
-                "排名标准差": "{:.0f}",
-                "最大排名差": "{:.0f}",
-                "相对离散度": "{:.2f}",
-                "平均排名": "{:.0f}",
+                "差值标准差": "{:.2f}",
+                "平均差值": "{:.2f}",
+                "极差": "{:.2f}",
+                "最强科差值": "{:.2f}",
+                "最弱科差值": "{:.2f}",
                 "扣分": "{:.0f}"
             }
             st.dataframe(
-                biased_students.style.background_gradient(subset=['排名标准差'], cmap='YlOrRd').format(format_dict),
+                biased_students.style.background_gradient(subset=['差值标准差'], cmap='YlOrRd').format(format_dict),
                 use_container_width=True
             )
         else:
@@ -1034,11 +1035,11 @@ with tab5:
             if not student_bias.empty:
                 bias_info = student_bias.iloc[0]
                 st.write(f"**偏科等级**: {bias_info['偏科等级']}")
-                st.write(f"**排名标准差**: {bias_info['排名标准差']:.1f}")
-                st.write(f"**最大排名差**: {int(bias_info['最大排名差'])}")
-                st.write(f"**相对离散度**: {bias_info['相对离散度']:.2f}")
-                st.write(f"**最强科目**: {bias_info['最强科目']}")
-                st.write(f"**最弱科目**: {bias_info['最弱科目']}")
+                st.write(f"**差值标准差**: {bias_info['差值标准差']:.2f}分")
+                st.write(f"**平均差值**: {bias_info['平均差值']:.2f}分（整体水平）")
+                st.write(f"**最强科目**: {bias_info['最强科目']}（超参考线{bias_info['最强科差值']:.1f}分）")
+                st.write(f"**最弱科目**: {bias_info['最弱科目']}（{'超' if bias_info['最弱科差值'] >= 0 else '低于'}参考线{abs(bias_info['最弱科差值']):.1f}分）")
+                st.write(f"**极差**: {bias_info['极差']:.1f}分（最强科比最弱科高）")
                 st.write(f"**偏科扣分**: {student_score['偏科扣分']:.1f}")
         
         # 8. 总得分
