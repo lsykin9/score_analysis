@@ -1069,12 +1069,39 @@ with tab6:
     
     # 导出总表
     st.subheader("1. 导出成绩总表（仅原始数据）")
-    st.info("💡 此文件只包含原始成绩数据，可作为历史总表上传继续分析")
+    st.info("💡 此文件包含多个工作表，每次考试一个工作表，方便管理和查看")
     
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # 只导出原始成绩数据（df_all），不包含计算的得分
-        df_all.to_excel(writer, sheet_name='成绩总表', index=False)
+        # 新格式：每次考试单独保存为一个工作表
+        # 从 df_all 中提取每次考试的数据
+        import re
+        
+        # 获取所有考试的列名（通过识别带考试标识的列）
+        exam_labels_set = set()
+        for col in df_all.columns:
+            if col == "姓名":
+                continue
+            match = re.search(r'_(.+)$', col)
+            if match:
+                exam_label = match.group(1)
+                exam_labels_set.add(exam_label)
+        
+        # 为每次考试创建一个工作表
+        for exam_label in sorted(exam_labels_set):
+            # 提取该次考试的所有列
+            cols_for_exam = ["姓名"] + [col for col in df_all.columns if col.endswith(f"_{exam_label}")]
+            df_exam = df_all[cols_for_exam].copy()
+            
+            # 去掉列名中的考试标识后缀（使工作表内数据更简洁）
+            df_exam.columns = [col.replace(f"_{exam_label}", "") if col != "姓名" else col for col in df_exam.columns]
+            
+            # 使用考试名称作为工作表名称（Excel工作表名最长31字符）
+            sheet_name = exam_label[:31] if len(exam_label) > 31 else exam_label
+            df_exam.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        # 同时保留一个完整的总表（可选）
+        df_all.to_excel(writer, sheet_name='完整总表', index=False)
     
     st.download_button(
         label="📥 下载成绩总表（原始数据）",

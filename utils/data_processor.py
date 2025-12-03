@@ -152,12 +152,72 @@ def process_data():
         with open("成绩总表_temp.xlsx", "wb") as f:
             f.write(st.session_state.history_file_content)
         
-        # 检查是否有说明行需要跳过
-        df_temp = pd.read_excel("成绩总表_temp.xlsx", nrows=1)
-        if df_temp.iloc[0, 0] and isinstance(df_temp.iloc[0, 0], str) and "说明" in str(df_temp.iloc[0, 0]):
-            df_all = pd.read_excel("成绩总表_temp.xlsx", skiprows=1)
+        # 读取所有工作表
+        excel_file = pd.ExcelFile("成绩总表_temp.xlsx")
+        sheet_names = excel_file.sheet_names
+        
+        # 如果有多个工作表，说明是新格式（每次考试一个工作表）
+        if len(sheet_names) > 1:
+            st.info(f"📊 检测到多工作表格式，共 {len(sheet_names)} 个工作表")
+            # 读取除'成绩总表'和'完整总表'外的所有工作表（每个工作表对应一次考试）
+            history_dfs = []
+            import re
+            
+            for sheet_name in sheet_names:
+                if sheet_name in ['成绩总表', '完整总表']:  # 跳过总表工作表
+                    continue
+                df_sheet = pd.read_excel("成绩总表_temp.xlsx", sheet_name=sheet_name)
+                
+                # 检查列名格式，判断是否需要添加工作表名作为考试标识
+                sample_col = [col for col in df_sheet.columns if col != "姓名"][0] if len(df_sheet.columns) > 1 else None
+                
+                # 判断列名是否已经有完整的考试后缀（而不只是尾部下划线）
+                has_exam_suffix = False
+                if sample_col:
+                    # 检查是否符合"科目_考试名称"格式（考试名称不为空）
+                    import re
+                    match = re.match(r'^(.+)_(.+)$', sample_col)
+                    if match and match.group(2) and not match.group(2).isspace():
+                        has_exam_suffix = True
+                
+                if has_exam_suffix:
+                    # 列名已经有完整后缀（如"总分_考试1"），直接使用
+                    st.success(f"✅ 读取工作表: {sheet_name}（列名已包含考试标识）")
+                    history_dfs.append((sheet_name, df_sheet))
+                else:
+                    # 列名没有后缀或只有空后缀，使用工作表名称作为考试标识
+                    # 但如果工作表名是 Sheet1/Sheet2 这种默认名，跳过
+                    if re.match(r'^Sheet\d+$', sheet_name):
+                        st.warning(f"⚠️ 工作表 '{sheet_name}' 使用了默认名称且列名无考试标识，已跳过")
+                        continue
+                    
+                    # 为所有列（除了"姓名"）添加考试标识后缀
+                    rename_dict = {}
+                    for col in df_sheet.columns:
+                        if col != "姓名":
+                            rename_dict[col] = f"{col}_{sheet_name}"
+                    
+                    df_sheet = df_sheet.rename(columns=rename_dict)
+                    history_dfs.append((sheet_name, df_sheet))
+                    st.success(f"✅ 读取工作表: {sheet_name}")
+            
+            # 合并所有工作表的数据
+            if history_dfs:
+                df_all = history_dfs[0][1]
+                for exam_label, df_sheet in history_dfs[1:]:
+                    df_all = pd.merge(df_all, df_sheet, on="姓名", how="outer", suffixes=('', '_重复')).fillna(0)
+                    # 删除重复列
+                    duplicate_cols = [col for col in df_all.columns if col.endswith('_重复')]
+                    if duplicate_cols:
+                        df_all = df_all.drop(columns=duplicate_cols)
         else:
-            df_all = pd.read_excel("成绩总表_temp.xlsx")
+            # 旧格式：单工作表，所有考试堆叠在一起
+            # 检查是否有说明行需要跳过
+            df_temp = pd.read_excel("成绩总表_temp.xlsx", nrows=1)
+            if df_temp.iloc[0, 0] and isinstance(df_temp.iloc[0, 0], str) and "说明" in str(df_temp.iloc[0, 0]):
+                df_all = pd.read_excel("成绩总表_temp.xlsx", skiprows=1)
+            else:
+                df_all = pd.read_excel("成绩总表_temp.xlsx")
         
         # 检查历史总表的格式
         rank_cols_history = [col for col in df_all.columns if col.startswith("排名_") or col.startswith("年级排名_")]
@@ -183,7 +243,14 @@ def process_data():
     all_dfs = []
     exam_labels = {}  # 存储考试编号到标签的映射
     
-    # 如果有历史总表，从列名中提取考试标签
+    # 优先从 session_state 读取用户自定义的考试标签
+    if len(st.session_state.score_files) > 0:
+        for idx, file_info in enumerate(st.session_state.score_files):
+            exam_num = file_info['exam_num']
+            exam_label = file_info.get('exam_label', f"第{exam_num}次考试")
+            exam_labels[exam_num] = exam_label
+    
+    # 如果有历史总表，从列名中提取考试标签（仅用于未在 session_state 中定义的考试）
     if df_all is not None:
         # 从成绩列名中提取考试标签（格式：科目_考试X 或 总分_考试X）
         import re
@@ -196,8 +263,36 @@ def process_data():
                 exam_num_match = re.search(r'考试(\d+)', exam_label)
                 if exam_num_match:
                     exam_num = int(exam_num_match.group(1))
+                    # 只有当该考试编号未在 session_state 中定义时才使用历史总表的标签
                     if exam_num not in exam_labels:
                         exam_labels[exam_num] = exam_label
+    
+    # 更新历史总表的列名（如果用户修改了考试标签）
+    if df_all is not None and len(exam_labels) > 0:
+        rename_dict = {}
+        import re
+        for col in df_all.columns:
+            if col == "姓名":
+                continue
+            # 匹配列名格式：科目_旧标签 或 总分_旧标签
+            match = re.search(r'^(.+)_(.+)$', col)
+            if match:
+                prefix = match.group(1)  # 如：总分、语文、化学年级排名
+                old_label = match.group(2)  # 旧的考试标签
+                
+                # 尝试从旧标签中提取考试编号
+                exam_num_match = re.search(r'考试(\d+)', old_label)
+                if exam_num_match:
+                    exam_num = int(exam_num_match.group(1))
+                    # 如果该考试有新标签，更新列名
+                    if exam_num in exam_labels:
+                        new_label = exam_labels[exam_num]
+                        if new_label != old_label:
+                            new_col = f"{prefix}_{new_label}"
+                            rename_dict[col] = new_col
+        
+        if rename_dict:
+            df_all = df_all.rename(columns=rename_dict)
     
     if len(st.session_state.score_files) > 0:
         for idx, file_info in enumerate(st.session_state.score_files):
@@ -218,6 +313,21 @@ def process_data():
             else:
                 df = pd.read_excel(temp_filename)
             
+            # 智能处理列名：
+            # - 如果列名以 _ 结尾，说明需要添加考试标识，先去掉 _ 再重命名
+            # - 如果列名不以 _ 结尾，保持原样（如"姓名"）
+            # 这样 Excel 模板可以用 _ 来标记哪些列需要添加考试标识
+            cleaned_columns = []
+            for col in df.columns:
+                if col == '姓名':
+                    cleaned_columns.append(col)
+                elif col.endswith('_'):
+                    # 去掉尾部下划线，后续会添加考试标签
+                    cleaned_columns.append(col.rstrip('_'))
+                else:
+                    cleaned_columns.append(col)
+            
+            df.columns = cleaned_columns
             all_dfs.append((exam_num, exam_label, df))
     
     # 如果没有历史总表,需要从新文件推断格式
@@ -320,7 +430,10 @@ def process_data():
             duplicate_cols = existing_cols & new_cols
             
             if duplicate_cols:
-                st.warning(f"⚠️ 警告: 检测到重复列名 {duplicate_cols}，请修改考试名称以避免冲突")
+                st.error(f"❌ 检测到重复考试: **{exam_label}**")
+                st.info("💡 该考试已存在于历史总表中。如需更新数据，请先删除历史总表中对应的工作表，或将新文件重命名为其他考试名称。")
+                st.warning(f"⚠️ 已自动跳过重复数据，保留历史总表中的原始数据")
+                # 跳过重复的列，不覆盖历史数据
                 df_renamed = df_renamed[[col for col in df_renamed.columns if col not in duplicate_cols or col == "姓名"]]
             
             df_all = pd.merge(df_all, df_renamed, on="姓名", how="outer", suffixes=('', '_重复')).fillna(0)

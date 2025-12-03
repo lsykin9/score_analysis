@@ -1018,22 +1018,31 @@ def _render_file_upload():
             else:
                 df_history = pd.read_excel(io.BytesIO(history_file.getvalue()))
             
-            # 检测考试次数：匹配最后一个下划线后的考试标签
-            # 支持格式：总分_考试1, 总分年级排名_考试2, 语文_考试3 等
-            import re
-            exam_labels_found = set()
+            # 检查是否为多工作表格式
+            excel_file = pd.ExcelFile(io.BytesIO(history_file.getvalue()))
+            sheet_names = excel_file.sheet_names
             
-            for col in df_history.columns:
-                # 匹配最后一个下划线后的内容作为考试标签
-                if '_' in col and col != '姓名':
-                    # 提取最后一个下划线后的部分
-                    exam_label = col.rsplit('_', 1)[-1]
-                    # 如果包含"考试"关键字，则认为是考试标签
-                    if '考试' in exam_label or exam_label.isdigit():
-                        exam_labels_found.add(exam_label)
-            
-            st.session_state.history_exam_count = len(exam_labels_found)
-            st.success(f"✅ 历史总表已上传 (包含 {st.session_state.history_exam_count} 次考试)")
+            # 如果有多个工作表，每个工作表（除了'完整总表'等）代表一次考试
+            if len(sheet_names) > 1:
+                exam_count = len([s for s in sheet_names if s not in ['成绩总表', '完整总表']])
+                st.session_state.history_exam_count = exam_count
+                st.success(f"✅ 历史总表已上传 (多工作表格式，包含 {exam_count} 次考试)")
+            else:
+                # 旧格式：单工作表，需要从列名推断考试次数
+                # 检测考试次数：匹配最后一个下划线后的考试标签
+                import re
+                exam_labels_found = set()
+                
+                for col in df_history.columns:
+                    # 匹配最后一个下划线后的内容作为考试标签
+                    if '_' in col and col != '姓名':
+                        # 提取最后一个下划线后的部分
+                        exam_label = col.rsplit('_', 1)[-1]
+                        if exam_label:  # 只要有内容就算一次考试
+                            exam_labels_found.add(exam_label)
+                
+                st.session_state.history_exam_count = len(exam_labels_found)
+                st.success(f"✅ 历史总表已上传 (单工作表格式，包含 {len(exam_labels_found)} 次考试)")
         except Exception as e:
             st.error(f"❌ 历史文件读取失败: {str(e)}")
             st.session_state.history_file_content = None
@@ -1105,12 +1114,12 @@ def _render_file_upload():
                 new_label = st.text_input(
                     f"考试{idx+1}名称",
                     value=current_label,
-                    key=f"label_{idx}_{file_info['exam_num']}",  # 添加exam_num确保key唯一性
+                    key=f"label_{idx}_{file_info['exam_num']}",
                     disabled=st.session_state.analysis_started,
                     label_visibility="collapsed",
                     placeholder="例如: 期中考试、期末考试、月考"
                 )
-                # 实时更新标签（当用户输入时立即保存）
+                # 实时更新标签
                 if new_label and new_label != current_label:
                     st.session_state.score_files[idx]['exam_label'] = new_label
             
