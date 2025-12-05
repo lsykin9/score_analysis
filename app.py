@@ -1078,17 +1078,21 @@ with tab6:
         import re
         
         # 获取所有考试的列名（通过识别带考试标识的列）
-        exam_labels_set = set()
-        for col in df_all.columns:
+        exam_labels_dict = {}  # {exam_label: first_col_index}
+        for idx, col in enumerate(df_all.columns):
             if col == "姓名":
                 continue
             match = re.search(r'_(.+)$', col)
             if match:
                 exam_label = match.group(1)
-                exam_labels_set.add(exam_label)
+                if exam_label not in exam_labels_dict:
+                    exam_labels_dict[exam_label] = idx  # 记录该考试第一次出现的列索引
+        
+        # 按列的出现顺序排序考试（从旧到新）
+        exam_labels_sorted = sorted(exam_labels_dict.keys(), key=lambda x: exam_labels_dict[x])
         
         # 为每次考试创建一个工作表
-        for exam_label in sorted(exam_labels_set):
+        for exam_label in exam_labels_sorted:
             # 提取该次考试的所有列
             cols_for_exam = ["姓名"] + [col for col in df_all.columns if col.endswith(f"_{exam_label}")]
             df_exam = df_all[cols_for_exam].copy()
