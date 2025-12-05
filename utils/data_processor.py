@@ -166,40 +166,32 @@ def process_data():
             for sheet_name in sheet_names:
                 if sheet_name in ['成绩总表', '完整总表']:  # 跳过总表工作表
                     continue
+                
+                # 跳过默认工作表名
+                if re.match(r'^Sheet\d+$', sheet_name):
+                    st.warning(f"⚠️ 工作表 '{sheet_name}' 使用了默认名称，已跳过。请将工作表重命名为考试名称（如：期中考试、期末考试）")
+                    continue
+                
                 df_sheet = pd.read_excel("成绩总表_temp.xlsx", sheet_name=sheet_name)
                 
-                # 检查列名格式，判断是否需要添加工作表名作为考试标识
-                sample_col = [col for col in df_sheet.columns if col != "姓名"][0] if len(df_sheet.columns) > 1 else None
+                # 直接使用工作表名称作为考试标识
+                # 为所有列（除了"姓名"）添加考试标识后缀
+                rename_dict = {}
+                for col in df_sheet.columns:
+                    if col != "姓名":
+                        # 先去掉可能存在的尾部下划线（兼容旧模板）
+                        clean_col = col.rstrip('_') if col.endswith('_') else col
+                        # 检查列名是否已经有后缀（避免重复添加）
+                        if not clean_col.endswith(f"_{sheet_name}"):
+                            rename_dict[col] = f"{clean_col}_{sheet_name}"
                 
-                # 判断列名是否已经有完整的考试后缀（而不只是尾部下划线）
-                has_exam_suffix = False
-                if sample_col:
-                    # 检查是否符合"科目_考试名称"格式（考试名称不为空）
-                    import re
-                    match = re.match(r'^(.+)_(.+)$', sample_col)
-                    if match and match.group(2) and not match.group(2).isspace():
-                        has_exam_suffix = True
-                
-                if has_exam_suffix:
-                    # 列名已经有完整后缀（如"总分_考试1"），直接使用
-                    st.success(f"✅ 读取工作表: {sheet_name}（列名已包含考试标识）")
-                    history_dfs.append((sheet_name, df_sheet))
-                else:
-                    # 列名没有后缀或只有空后缀，使用工作表名称作为考试标识
-                    # 但如果工作表名是 Sheet1/Sheet2 这种默认名，跳过
-                    if re.match(r'^Sheet\d+$', sheet_name):
-                        st.warning(f"⚠️ 工作表 '{sheet_name}' 使用了默认名称且列名无考试标识，已跳过")
-                        continue
-                    
-                    # 为所有列（除了"姓名"）添加考试标识后缀
-                    rename_dict = {}
-                    for col in df_sheet.columns:
-                        if col != "姓名":
-                            rename_dict[col] = f"{col}_{sheet_name}"
-                    
+                if rename_dict:
                     df_sheet = df_sheet.rename(columns=rename_dict)
-                    history_dfs.append((sheet_name, df_sheet))
-                    st.success(f"✅ 读取工作表: {sheet_name}")
+                if rename_dict:
+                    df_sheet = df_sheet.rename(columns=rename_dict)
+                
+                history_dfs.append((sheet_name, df_sheet))
+                st.success(f"✅ 读取工作表: {sheet_name}")
             
             # 合并所有工作表的数据
             if history_dfs:
