@@ -216,98 +216,27 @@ if not st.session_state.analysis_started:
 
 # ===== 以下代码只有在开始分析后才会执行 =====
 
-# 生成缓存键（基于文件内容和配置参数）
-def generate_cache_key():
-    """生成缓存键，用于识别相同的分析配置"""
-    import hashlib
+# 处理上传的文件
+try:
+    df_all, df_score, df_final, df_bias, has_subjects, rank_cols, score_cols, subjects, bias_dict, exam_labels = process_data()
     
-    # 收集关键参数
-    key_parts = []
+    # 获取集团排名列
+    group_rank_cols = []
+    for col in df_all.columns:
+        # 新格式：总分集团排名_考试1 或 语文集团排名_考试1
+        # 旧格式：总分_集团排名_考试1 或 集团排名_考试1
+        if col.startswith("集团排名_"):
+            group_rank_cols.append(col)
+        elif "集团排名_" in col:
+            group_rank_cols.append(col)
     
-    # 1. 文件内容哈希
-    if st.session_state.history_file_content:
-        key_parts.append(hashlib.md5(st.session_state.history_file_content).hexdigest()[:16])
+    st.success("✅ 数据处理完成！")
     
-    for file_info in st.session_state.score_files:
-        if 'content' in file_info:
-            key_parts.append(hashlib.md5(file_info['content']).hexdigest()[:16])
-    
-    # 2. 配置参数
-    config_str = str(sorted(st.session_state.config_params.items()))
-    key_parts.append(hashlib.md5(config_str.encode()).hexdigest()[:8])
-    
-    # 3. 排名区间和奖励（rank_intervals 是列表）
-    rank_str = str(st.session_state.rank_intervals)
-    key_parts.append(hashlib.md5(rank_str.encode()).hexdigest()[:8])
-    
-    # 4. 其他奖励配置
-    bonus_str = str(st.session_state.rank_bonuses) + str(st.session_state.get('group_rank_bonuses', []))
-    key_parts.append(hashlib.md5(bonus_str.encode()).hexdigest()[:8])
-    
-    return "_".join(key_parts)
-
-# 检查缓存
-cache_key = generate_cache_key()
-use_cache = False
-
-if 'analysis_cache' in st.session_state and 'cache_key' in st.session_state:
-    if st.session_state.cache_key == cache_key:
-        # 缓存有效，直接使用
-        use_cache = True
-        cached_data = st.session_state.analysis_cache
-        
-        df_all = cached_data['df_all']
-        df_score = cached_data['df_score']
-        df_final = cached_data['df_final']
-        df_bias = cached_data['df_bias']
-        has_subjects = cached_data['has_subjects']
-        rank_cols = cached_data['rank_cols']
-        score_cols = cached_data['score_cols']
-        group_rank_cols = cached_data['group_rank_cols']
-        subjects = cached_data['subjects']
-        bias_dict = cached_data['bias_dict']
-        exam_labels = cached_data['exam_labels']
-        
-        st.info("⚡ 使用缓存数据（页面刷新后自动恢复）")
-
-# 如果没有缓存，执行分析
-if not use_cache:
-    try:
-        df_all, df_score, df_final, df_bias, has_subjects, rank_cols, score_cols, subjects, bias_dict, exam_labels = process_data()
-        
-        # 获取集团排名列
-        group_rank_cols = []
-        for col in df_all.columns:
-            # 新格式：总分集团排名_考试1 或 语文集团排名_考试1
-            # 旧格式：总分_集团排名_考试1 或 集团排名_考试1
-            if col.startswith("集团排名_"):
-                group_rank_cols.append(col)
-            elif "集团排名_" in col:
-                group_rank_cols.append(col)
-        
-        # 保存到缓存
-        st.session_state.analysis_cache = {
-            'df_all': df_all,
-            'df_score': df_score,
-            'df_final': df_final,
-            'df_bias': df_bias,
-            'has_subjects': has_subjects,
-            'rank_cols': rank_cols,
-            'score_cols': score_cols,
-            'group_rank_cols': group_rank_cols,
-            'subjects': subjects,
-            'bias_dict': bias_dict,
-            'exam_labels': exam_labels
-        }
-        st.session_state.cache_key = cache_key
-        
-        st.success("✅ 数据处理完成！")
-        
-    except Exception as e:
-        st.error(f"❌ 处理数据时出错：{str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
-        st.stop()
+except Exception as e:
+    st.error(f"❌ 处理数据时出错：{str(e)}")
+    import traceback
+    st.code(traceback.format_exc())
+    st.stop()
 
 # 存储到session state（兼容后续代码）
 st.session_state['df_all'] = df_all
