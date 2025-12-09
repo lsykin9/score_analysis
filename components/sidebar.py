@@ -955,9 +955,10 @@ def _render_bias_penalty_settings():
         st.markdown("**轻微偏科**")
         st.session_state.config_params["轻微偏科_标准差"] = st.number_input(
             "差值标准差阈值",
-            value=st.session_state.config_params.get("轻微偏科_标准差", 5),
-            min_value=0,
-            step=1,
+            value=st.session_state.config_params.get("轻微偏科_标准差", 7.5),
+            min_value=0.0,
+            step=0.1,
+            format="%.1f",
             disabled=st.session_state.analysis_started,
             help="各科得分率差值标准差 > 此阈值判定为轻微偏科（百分比单位）"
         )
@@ -965,9 +966,10 @@ def _render_bias_penalty_settings():
         st.markdown("**明显偏科**")
         st.session_state.config_params["明显偏科_标准差"] = st.number_input(
             "差值标准差阈值 ",
-            value=st.session_state.config_params.get("明显偏科_标准差", 10),
-            min_value=0,
-            step=1,
+            value=st.session_state.config_params.get("明显偏科_标准差", 8.5),
+            min_value=0.0,
+            step=0.1,
+            format="%.1f",
             disabled=st.session_state.analysis_started,
             help="各科得分率差值标准差 > 此阈值判定为明显偏科（百分比单位）"
         )
@@ -975,9 +977,10 @@ def _render_bias_penalty_settings():
         st.markdown("**严重偏科**")
         st.session_state.config_params["严重偏科_标准差"] = st.number_input(
             "差值标准差阈值  ",
-            value=st.session_state.config_params.get("严重偏科_标准差", 15),
-            min_value=0,
-            step=1,
+            value=st.session_state.config_params.get("严重偏科_标准差", 10.0),
+            min_value=0.0,
+            step=0.1,
+            format="%.1f",
             disabled=st.session_state.analysis_started,
             help="各科得分率差值标准差 > 此阈值判定为严重偏科（百分比单位）"
         )
