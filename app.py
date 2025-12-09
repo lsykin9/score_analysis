@@ -236,9 +236,13 @@ def generate_cache_key():
     config_str = str(sorted(st.session_state.config_params.items()))
     key_parts.append(hashlib.md5(config_str.encode()).hexdigest()[:8])
     
-    # 3. 排名区间和奖励
-    rank_str = str(sorted(st.session_state.rank_intervals.items()))
+    # 3. 排名区间和奖励（rank_intervals 是列表）
+    rank_str = str(st.session_state.rank_intervals)
     key_parts.append(hashlib.md5(rank_str.encode()).hexdigest()[:8])
+    
+    # 4. 其他奖励配置
+    bonus_str = str(st.session_state.rank_bonuses) + str(st.session_state.get('group_rank_bonuses', []))
+    key_parts.append(hashlib.md5(bonus_str.encode()).hexdigest()[:8])
     
     return "_".join(key_parts)
 
