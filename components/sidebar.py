@@ -955,7 +955,7 @@ def _render_bias_penalty_settings():
         st.markdown("**轻微偏科**")
         st.session_state.config_params["轻微偏科_标准差"] = st.number_input(
             "差值标准差阈值",
-            value=st.session_state.config_params.get("轻微偏科_标准差", 7.5),
+            value=float(st.session_state.config_params.get("轻微偏科_标准差", 7.5)),
             min_value=0.0,
             step=0.1,
             format="%.1f",
@@ -966,7 +966,7 @@ def _render_bias_penalty_settings():
         st.markdown("**明显偏科**")
         st.session_state.config_params["明显偏科_标准差"] = st.number_input(
             "差值标准差阈值 ",
-            value=st.session_state.config_params.get("明显偏科_标准差", 8.5),
+            value=float(st.session_state.config_params.get("明显偏科_标准差", 8.5)),
             min_value=0.0,
             step=0.1,
             format="%.1f",
@@ -977,7 +977,7 @@ def _render_bias_penalty_settings():
         st.markdown("**严重偏科**")
         st.session_state.config_params["严重偏科_标准差"] = st.number_input(
             "差值标准差阈值  ",
-            value=st.session_state.config_params.get("严重偏科_标准差", 10.0),
+            value=float(st.session_state.config_params.get("严重偏科_标准差", 10.0)),
             min_value=0.0,
             step=0.1,
             format="%.1f",
