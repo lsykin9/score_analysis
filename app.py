@@ -182,15 +182,6 @@ auto_load_config()
 # 渲染侧边栏
 render_sidebar()
 
-# 🧪 测试按钮：模拟休眠后配置丢失
-if st.sidebar.button("🧪 测试：清空配置（模拟休眠）", key="test_clear_config"):
-    st.session_state.rank_intervals = []
-    st.session_state.rank_bonuses = []
-    st.session_state.config_params = {}
-    st.session_state.config_loaded = True  # 保留标志，模拟真实场景
-    st.sidebar.warning("⚠️ 配置已清空，页面即将刷新测试恢复功能")
-    st.rerun()
-
 # 检查是否至少有历史总表或新成绩文件
 if len(st.session_state.score_files) == 0 and st.session_state.history_file_content is None:
     st.info("👈 请在侧边栏上传至少一个成绩文件或历史总表")
