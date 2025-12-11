@@ -33,10 +33,16 @@ def _save_to_browser():
     config_json = json.dumps(config, ensure_ascii=False)
     
     # 使用 JavaScript 保存到 localStorage
+    # 同时设置一个标记表示配置已保存
     html(f"""
         <script>
-            localStorage.setItem('score_analysis_config', {json.dumps(config_json)});
-            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: 'saved'}}, '*');
+            try {{
+                localStorage.setItem('score_analysis_config', {json.dumps(config_json)});
+                localStorage.setItem('score_analysis_config_timestamp', Date.now());
+                window.parent.postMessage({{type: 'streamlit:setComponentValue', value: 'saved'}}, '*');
+            }} catch(e) {{
+                console.error('Failed to save config:', e);
+            }}
         </script>
     """, height=0)
 
@@ -133,7 +139,15 @@ def _load_config():
 
 def auto_load_config():
     """自动加载保存的配置（在应用启动时调用）"""
-    if 'config_loaded' not in st.session_state:
+    # 检查关键配置是否存在，如果不存在说明 session_state 被重置了
+    config_missing = (
+        not st.session_state.get('rank_intervals') or 
+        not st.session_state.get('rank_bonuses') or
+        not st.session_state.get('config_params')
+    )
+    
+    # 如果配置丢失或首次加载，尝试恢复
+    if config_missing or 'config_loaded' not in st.session_state:
         # 先尝试从浏览器加载
         loaded = _try_load_from_browser_silent()
         
@@ -163,14 +177,21 @@ def _try_load_from_browser_silent():
         # 注入 JavaScript 代码来读取 localStorage
         result = html("""
             <script>
-                const config = localStorage.getItem('score_analysis_config');
-                if (config) {
-                    window.parent.postMessage({type: 'streamlit:setComponentValue', value: config}, '*');
+                try {
+                    const config = localStorage.getItem('score_analysis_config');
+                    if (config) {
+                        window.parent.postMessage({type: 'streamlit:setComponentValue', value: config}, '*');
+                    } else {
+                        window.parent.postMessage({type: 'streamlit:setComponentValue', value: null}, '*');
+                    }
+                } catch(e) {
+                    console.error('Failed to load config:', e);
+                    window.parent.postMessage({type: 'streamlit:setComponentValue', value: null}, '*');
                 }
             </script>
         """, height=0)
         
-        if result and result != 'null':
+        if result and result != 'null' and result is not None:
             config = json.loads(result)
             st.session_state.config_params = config.get("config_params", {})
             st.session_state.rank_intervals = config.get("rank_intervals", [])
@@ -179,8 +200,10 @@ def _try_load_from_browser_silent():
             st.session_state.chain_bonuses = config.get("chain_bonuses", [])
             st.session_state.score_bonuses = config.get("score_bonuses", [])
             st.session_state.bias_penalties = config.get("bias_penalties", [])
+            st.session_state.subject_references = config.get("subject_references", {})
             return True
-    except:
+    except Exception as e:
+        # 静默失败，不影响正常使用
         pass
     return False
 
