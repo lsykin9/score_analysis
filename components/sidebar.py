@@ -212,78 +212,75 @@ def _reset_to_default():
     """重置为默认配置"""
     # 重置所有配置为默认值
     st.session_state.rank_intervals = [
-        {"id": 0, "start": 0, "end": 20, "weight": 2.0},
-        {"id": 1, "start": 21, "end": 50, "weight": 1.8},
-        {"id": 2, "start": 51, "end": 100, "weight": 1.5},
+        {"id": 0, "start": 0, "end": 20, "weight": 4.0},
+        {"id": 1, "start": 21, "end": 50, "weight": 2.5},
+        {"id": 2, "start": 51, "end": 100, "weight": 1.4},
         {"id": 3, "start": 101, "end": 150, "weight": 1.2},
         {"id": 4, "start": 151, "end": 200, "weight": 1.0},
         {"id": 5, "start": 201, "end": 300, "weight": 0.8},
         {"id": 6, "start": 301, "end": 430, "weight": 0.6},
         {"id": 7, "start": 431, "end": 99999, "weight": 0.5}
     ]
+    st.session_state.next_interval_id = 8
     
     st.session_state.rank_bonuses = [
-        {"id": 0, "threshold": 10, "bonus": 30},
-        {"id": 1, "threshold": 20, "bonus": 25},
-        {"id": 2, "threshold": 30, "bonus": 20},
-        {"id": 3, "threshold": 50, "bonus": 15},
-        {"id": 4, "threshold": 100, "bonus": 10}
+        {"id": 0, "threshold": 5, "bonus": 100},
+        {"id": 1, "threshold": 10, "bonus": 70},
+        {"id": 2, "threshold": 20, "bonus": 50},
+        {"id": 3, "threshold": 30, "bonus": 35},
+        {"id": 4, "threshold": 50, "bonus": 20},
+        {"id": 5, "threshold": 100, "bonus": 10}
     ]
+    st.session_state.next_bonus_id = 6
     
     st.session_state.group_rank_bonuses = [
-        {"id": 0, "threshold": 50, "bonus": 20},
-        {"id": 1, "threshold": 100, "bonus": 15},
-        {"id": 2, "threshold": 200, "bonus": 10},
-        {"id": 3, "threshold": 300, "bonus": 5}
+        {"id": 0, "threshold": 20, "bonus": 200},
+        {"id": 1, "threshold": 50, "bonus": 150},
+        {"id": 2, "threshold": 100, "bonus": 100},
+        {"id": 3, "threshold": 150, "bonus": 75},
+        {"id": 4, "threshold": 200, "bonus": 50}
     ]
+    st.session_state.next_group_bonus_id = 5
     
     st.session_state.chain_bonuses = [
-        {"id": 0, "times": 1, "bonus": 5},
-        {"id": 1, "times": 2, "bonus": 8},
-        {"id": 2, "times": 3, "bonus": 12},
-        {"id": 3, "times": 4, "bonus": 18},
-        {"id": 4, "times": 5, "bonus": 25}
+        {"id": 0, "times": 1, "bonus": 20},
+        {"id": 1, "times": 2, "bonus": 50},
+        {"id": 2, "times": 3, "bonus": 90},
+        {"id": 3, "times": 4, "bonus": 140},
+        {"id": 4, "times": 5, "bonus": 200}
     ]
+    st.session_state.next_chain_bonus_id = 5
     
     st.session_state.score_bonuses = [
-        {"id": 0, "threshold": 580, "bonus": 5},
-        {"id": 1, "threshold": 590, "bonus": 8},
-        {"id": 2, "threshold": 600, "bonus": 10},
-        {"id": 3, "threshold": 610, "bonus": 12},
-        {"id": 4, "threshold": 620, "bonus": 15},
-        {"id": 5, "threshold": 630, "bonus": 18},
-        {"id": 6, "threshold": 640, "bonus": 20}
+        {"id": 0, "threshold": 590, "bonus": 20},
+        {"id": 1, "threshold": 600, "bonus": 40},
+        {"id": 2, "threshold": 610, "bonus": 60},
+        {"id": 3, "threshold": 620, "bonus": 80},
+        {"id": 4, "threshold": 630, "bonus": 100},
+        {"id": 5, "threshold": 640, "bonus": 120},
+        {"id": 6, "threshold": 650, "bonus": 140},
+        {"id": 7, "threshold": 660, "bonus": 160},
+        {"id": 8, "threshold": 670, "bonus": 180}
     ]
+    st.session_state.next_score_bonus_id = 9
     
     st.session_state.bias_penalties = [
-        {"id": 0, "level": "轻微", "penalty": 5},
-        {"id": 1, "level": "明显", "penalty": 15},
-        {"id": 2, "level": "严重", "penalty": 30}
+        {"id": 0, "level": "轻微", "penalty": 20},
+        {"id": 1, "level": "明显", "penalty": 40},
+        {"id": 2, "level": "严重", "penalty": 70}
     ]
     
     st.session_state.config_params = {
-        "A线（排名）": 430,
-        "A线过线奖励": 5,
-        "B线（排名）": 500,
-        "B线过线奖励": 3,
-        "连续进步第1次奖励": 5,
-        "连续进步第2次奖励": 8,
-        "连续进步第3次奖励": 12,
-        "连续进步第4次奖励": 18,
-        "连续进步第5次奖励": 25,
-        "总分大于580奖励": 5,
-        "总分大于590奖励": 8,
-        "总分大于600奖励": 10,
-        "总分大于610奖励": 12,
-        "总分大于620奖励": 15,
-        "总分大于630奖励": 18,
-        "总分大于640奖励": 20,
-        "轻微偏科扣分": 5,
-        "明显偏科扣分": 15,
-        "严重偏科扣分": 30,
-        "轻微偏科_标准差": 5,
-        "明显偏科_标准差": 10,
-        "严重偏科_标准差": 15
+        "A线（排名）": 80,
+        "A线过线奖励": 100,
+        "B线（排名）": 430,
+        "B线过线奖励": 0,
+        "轻微偏科扣分": 20,
+        "明显偏科扣分": 40,
+        "严重偏科扣分": 70,
+        "轻微偏科_标准差": 7.5,
+        "明显偏科_标准差": 8.5,
+        "严重偏科_标准差": 10.0
     }
     
     # 各科成绩参考线（默认值，实际分数形式）
@@ -297,6 +294,17 @@ def _reset_to_default():
         "历史": 70,
         "地理": 70
     }
+    
+    # 清空所有输入框的 session_state key，强制使用新的默认值
+    keys_to_clear = [key for key in st.session_state.keys() if 
+                     key.startswith('start_') or key.startswith('end_') or key.startswith('weight_') or
+                     key.startswith('bonus_thresh_') or key.startswith('bonus_val_') or
+                     key.startswith('group_bonus_thresh_') or key.startswith('group_bonus_val_') or
+                     key.startswith('chain_times_') or key.startswith('chain_val_') or
+                     key.startswith('score_thresh_') or key.startswith('score_val_')]
+    
+    for key in keys_to_clear:
+        del st.session_state[key]
     
     st.success("✅ 已恢复默认配置！")
     st.rerun()
@@ -436,6 +444,19 @@ def _render_interval_settings():
     # 显示当前所有区间
     for idx, interval in enumerate(st.session_state.rank_intervals):
         interval_id = interval["id"]
+        
+        # 确保 session_state 中有这些 key 的值
+        start_key = f"start_{interval_id}"
+        end_key = f"end_{interval_id}"
+        weight_key = f"weight_{interval_id}"
+        
+        if start_key not in st.session_state:
+            st.session_state[start_key] = int(interval["start"])
+        if end_key not in st.session_state:
+            st.session_state[end_key] = int(interval["end"])
+        if weight_key not in st.session_state:
+            st.session_state[weight_key] = float(interval["weight"])
+        
         # 区间标题 - 从session_state读取实际保存的值
         actual_start = interval["start"]
         actual_end = interval["end"]
@@ -446,13 +467,13 @@ def _render_interval_settings():
         col1, col2, col3, col4 = st.columns([2.8, 2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("起始", value=int(interval["start"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"start_{interval_id}", on_change=_save_interval_values)
+            st.number_input("起始", step=1, min_value=0, disabled=st.session_state.analysis_started, key=start_key, on_change=_save_interval_values)
         
         with col2:
-            st.number_input("结束", value=int(interval["end"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"end_{interval_id}", on_change=_save_interval_values)
+            st.number_input("结束", step=1, min_value=0, disabled=st.session_state.analysis_started, key=end_key, on_change=_save_interval_values)
         
         with col3:
-            st.number_input("权重", value=float(interval["weight"]), step=0.1, min_value=0.0, disabled=st.session_state.analysis_started, key=f"weight_{interval_id}", on_change=_save_interval_values)
+            st.number_input("权重", step=0.1, min_value=0.0, disabled=st.session_state.analysis_started, key=weight_key, on_change=_save_interval_values)
         
         with col4:
             # 使用label占位实现对齐
@@ -569,16 +590,26 @@ def _render_rank_bonus_settings():
     # 显示当前所有年级排名奖励
     for idx, bonus in enumerate(st.session_state.rank_bonuses):
         bonus_id = bonus["id"]
+        
+        # 确保 session_state 中有这些 key 的值
+        thresh_key = f"bonus_thresh_{bonus_id}"
+        val_key = f"bonus_val_{bonus_id}"
+        
+        if thresh_key not in st.session_state:
+            st.session_state[thresh_key] = int(bonus["threshold"])
+        if val_key not in st.session_state:
+            st.session_state[val_key] = int(bonus["bonus"])
+        
         # 奖励标题
         st.markdown(f"**奖励档位 {idx + 1}**: `前 {bonus['threshold']} 名 → {bonus['bonus']} 分`")
         
         col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("前N名", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"bonus_thresh_{bonus_id}", on_change=_save_bonus_values)
+            st.number_input("前N名", step=1, min_value=1, disabled=st.session_state.analysis_started, key=thresh_key, on_change=_save_bonus_values)
         
         with col2:
-            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"bonus_val_{bonus_id}", on_change=_save_bonus_values)
+            st.number_input("奖励分", step=1, min_value=0, disabled=st.session_state.analysis_started, key=val_key, on_change=_save_bonus_values)
         
         with col3:
             # 使用label占位实现对齐
@@ -640,16 +671,26 @@ def _render_group_rank_bonus_settings():
     # 显示当前所有集团排名奖励
     for idx, bonus in enumerate(st.session_state.group_rank_bonuses):
         bonus_id = bonus["id"]
+        
+        # 确保 session_state 中有这些 key 的值
+        thresh_key = f"group_bonus_thresh_{bonus_id}"
+        val_key = f"group_bonus_val_{bonus_id}"
+        
+        if thresh_key not in st.session_state:
+            st.session_state[thresh_key] = int(bonus["threshold"])
+        if val_key not in st.session_state:
+            st.session_state[val_key] = int(bonus["bonus"])
+        
         # 奖励标题
         st.markdown(f"**奖励档位 {idx + 1}**: `前 {bonus['threshold']} 名 → {bonus['bonus']} 分`")
         
         col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("前N名", value=int(bonus["threshold"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"group_bonus_thresh_{bonus_id}", on_change=_save_group_bonus_values)
+            st.number_input("前N名", step=1, min_value=1, disabled=st.session_state.analysis_started, key=thresh_key, on_change=_save_group_bonus_values)
         
         with col2:
-            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"group_bonus_val_{bonus_id}", on_change=_save_group_bonus_values)
+            st.number_input("奖励分", step=1, min_value=0, disabled=st.session_state.analysis_started, key=val_key, on_change=_save_group_bonus_values)
         
         with col3:
             # 使用label占位实现对齐
@@ -711,16 +752,26 @@ def _render_chain_bonus_settings():
     # 显示当前所有连续进步奖励
     for idx, bonus in enumerate(st.session_state.chain_bonuses):
         bonus_id = bonus["id"]
+        
+        # 确保 session_state 中有这些 key 的值
+        times_key = f"chain_times_{bonus_id}"
+        val_key = f"chain_val_{bonus_id}"
+        
+        if times_key not in st.session_state:
+            st.session_state[times_key] = int(bonus["times"])
+        if val_key not in st.session_state:
+            st.session_state[val_key] = int(bonus["bonus"])
+        
         # 奖励标题
         st.markdown(f"**奖励档位 {idx + 1}**: `连续 {bonus['times']} 次 → {bonus['bonus']} 分`")
         
         col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("连续次数", value=int(bonus["times"]), step=1, min_value=1, disabled=st.session_state.analysis_started, key=f"chain_times_{bonus_id}", on_change=_save_chain_bonus_values)
+            st.number_input("连续次数", step=1, min_value=1, disabled=st.session_state.analysis_started, key=times_key, on_change=_save_chain_bonus_values)
         
         with col2:
-            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"chain_val_{bonus_id}", on_change=_save_chain_bonus_values)
+            st.number_input("奖励分", step=1, min_value=0, disabled=st.session_state.analysis_started, key=val_key, on_change=_save_chain_bonus_values)
         
         with col3:
             # 使用label占位实现对齐
@@ -782,16 +833,26 @@ def _render_score_bonus_settings():
     # 显示当前所有总分奖励
     for idx, bonus in enumerate(st.session_state.score_bonuses):
         bonus_id = bonus["id"]
+        
+        # 确保 session_state 中有这些 key 的值
+        thresh_key = f"score_thresh_{bonus_id}"
+        val_key = f"score_val_{bonus_id}"
+        
+        if thresh_key not in st.session_state:
+            st.session_state[thresh_key] = int(bonus["threshold"])
+        if val_key not in st.session_state:
+            st.session_state[val_key] = int(bonus["bonus"])
+        
         # 奖励标题
         st.markdown(f"**奖励档位 {idx + 1}**: `总分 > {bonus['threshold']} → {bonus['bonus']} 分`")
         
         col1, col2, col3 = st.columns([2.8, 2.8, 1.3])
         
         with col1:
-            st.number_input("总分阈值", value=int(bonus["threshold"]), step=10, min_value=0, disabled=st.session_state.analysis_started, key=f"score_thresh_{bonus_id}", on_change=_save_score_bonus_values)
+            st.number_input("总分阈值", step=10, min_value=0, disabled=st.session_state.analysis_started, key=thresh_key, on_change=_save_score_bonus_values)
         
         with col2:
-            st.number_input("奖励分", value=int(bonus["bonus"]), step=1, min_value=0, disabled=st.session_state.analysis_started, key=f"score_val_{bonus_id}", on_change=_save_score_bonus_values)
+            st.number_input("奖励分", step=1, min_value=0, disabled=st.session_state.analysis_started, key=val_key, on_change=_save_score_bonus_values)
         
         with col3:
             # 使用label占位实现对齐
