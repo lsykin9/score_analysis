@@ -130,3 +130,8 @@ def initialize_session_state():
             "严重偏科_最大差距": 200,
             "严重偏科_相对离散度": 300
         }
+    
+    # 东校状元奖（年级排名第1名的独立奖励）
+    if 'champion_bonus' not in st.session_state:
+        st.session_state.champion_bonus = 200
+

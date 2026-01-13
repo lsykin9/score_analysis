@@ -28,6 +28,7 @@ def _save_to_browser():
         "score_bonuses": st.session_state.score_bonuses,
         "bias_penalties": st.session_state.bias_penalties,
         "subject_references": st.session_state.get("subject_references", {}),
+        "champion_bonus": st.session_state.get("champion_bonus", 200),
     }
     
     config_json = json.dumps(config, ensure_ascii=False)
@@ -68,6 +69,7 @@ def _load_from_browser():
             st.session_state.score_bonuses = config.get("score_bonuses", [])
             st.session_state.bias_penalties = config.get("bias_penalties", [])
             st.session_state.subject_references = config.get("subject_references", {})
+            st.session_state.champion_bonus = config.get("champion_bonus", 200)
             return True
         except:
             return False
@@ -92,6 +94,7 @@ def _save_config():
                 "score_bonuses": st.session_state.score_bonuses,
                 "bias_penalties": st.session_state.bias_penalties,
                 "subject_references": st.session_state.get("subject_references", {}),
+                "champion_bonus": st.session_state.get("champion_bonus", 200),
             }
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
@@ -128,6 +131,7 @@ def _load_config():
         st.session_state.score_bonuses = config.get("score_bonuses", [])
         st.session_state.bias_penalties = config.get("bias_penalties", [])
         st.session_state.subject_references = config.get("subject_references", {})
+        st.session_state.champion_bonus = config.get("champion_bonus", 200)
         
         st.success("✅ 已从服务器加载配置！")
         st.rerun()
@@ -295,13 +299,17 @@ def _reset_to_default():
         "地理": 70
     }
     
+    # 东校状元奖（年级排名第1名的独立奖励）
+    st.session_state.champion_bonus = 200
+    
     # 清空所有输入框的 session_state key，强制使用新的默认值
     keys_to_clear = [key for key in st.session_state.keys() if 
                      key.startswith('start_') or key.startswith('end_') or key.startswith('weight_') or
                      key.startswith('bonus_thresh_') or key.startswith('bonus_val_') or
                      key.startswith('group_bonus_thresh_') or key.startswith('group_bonus_val_') or
                      key.startswith('chain_times_') or key.startswith('chain_val_') or
-                     key.startswith('score_thresh_') or key.startswith('score_val_')]
+                     key.startswith('score_thresh_') or key.startswith('score_val_') or
+                     key.startswith('champion_bonus')]
     
     for key in keys_to_clear:
         del st.session_state[key]
@@ -337,6 +345,7 @@ def _render_param_settings():
         
         _render_interval_settings()
         _render_line_and_bonus_settings()
+        _render_champion_bonus_settings()
         _render_rank_bonus_settings()
         _render_group_rank_bonus_settings()
         _render_chain_bonus_settings()
@@ -541,45 +550,82 @@ def _render_line_and_bonus_settings():
     st.markdown("---")
     st.subheader("排名线和过线奖励")
     
+    # 确保 config_params 中有这些 key 的值，并复制到顶层 session_state
+    if 'line_a_rank' not in st.session_state:
+        st.session_state.line_a_rank = st.session_state.config_params.get("A线（排名）", 80)
+    if 'line_a_bonus' not in st.session_state:
+        st.session_state.line_a_bonus = st.session_state.config_params.get("A线过线奖励", 100)
+    if 'line_b_rank' not in st.session_state:
+        st.session_state.line_b_rank = st.session_state.config_params.get("B线（排名）", 430)
+    if 'line_b_bonus' not in st.session_state:
+        st.session_state.line_b_bonus = st.session_state.config_params.get("B线过线奖励", 0)
+    
     # A线设置
     st.markdown("**A线**")
     col1, col2 = st.columns(2)
     with col1:
-        st.session_state.config_params["A线（排名）"] = st.number_input(
+        st.number_input(
             "A线排名", 
-            value=st.session_state.config_params.get("A线（排名）", st.session_state.config_params.get("线（排名）", 430)), 
             step=1, 
             min_value=1,
-            disabled=st.session_state.analysis_started
+            disabled=st.session_state.analysis_started,
+            key="line_a_rank"
         )
     with col2:
-        st.session_state.config_params["A线过线奖励"] = st.number_input(
+        st.number_input(
             "A线过线奖励", 
-            value=st.session_state.config_params.get("A线过线奖励", st.session_state.config_params.get("过线奖励", 5)), 
             step=1, 
             min_value=0,
-            disabled=st.session_state.analysis_started
+            disabled=st.session_state.analysis_started,
+            key="line_a_bonus"
         )
     
     # B线设置
     st.markdown("**B线**")
     col3, col4 = st.columns(2)
     with col3:
-        st.session_state.config_params["B线（排名）"] = st.number_input(
+        st.number_input(
             "B线排名", 
-            value=st.session_state.config_params.get("B线（排名）", 500), 
             step=1, 
             min_value=1,
-            disabled=st.session_state.analysis_started
+            disabled=st.session_state.analysis_started,
+            key="line_b_rank"
         )
     with col4:
-        st.session_state.config_params["B线过线奖励"] = st.number_input(
+        st.number_input(
             "B线过线奖励", 
-            value=st.session_state.config_params.get("B线过线奖励", 3), 
             step=1, 
             min_value=0,
-            disabled=st.session_state.analysis_started
+            disabled=st.session_state.analysis_started,
+            key="line_b_bonus"
         )
+    
+    # 同步到 config_params（用于数据处理时读取）
+    st.session_state.config_params["A线（排名）"] = st.session_state.line_a_rank
+    st.session_state.config_params["A线过线奖励"] = st.session_state.line_a_bonus
+    st.session_state.config_params["B线（排名）"] = st.session_state.line_b_rank
+    st.session_state.config_params["B线过线奖励"] = st.session_state.line_b_bonus
+
+
+def _render_champion_bonus_settings():
+    """渲染东校状元奖设置"""
+    st.markdown("---")
+    st.subheader("🏆 东校状元奖")
+    st.caption("年级排名第 1 名的独立奖励，与其他奖励不冲突")
+    
+    # 确保 session_state 中有 champion_bonus 的值
+    if 'champion_bonus' not in st.session_state:
+        st.session_state.champion_bonus = 200
+    
+    # 使用与年级排名奖励一致的模式：仅用 key 参数，不设置 value
+    st.number_input(
+        "状元奖分数",
+        min_value=0,
+        step=10,
+        disabled=st.session_state.analysis_started,
+        help="年级排名第 1 名的学生将获得此奖励",
+        key="champion_bonus"
+    )
 
 
 def _render_rank_bonus_settings():

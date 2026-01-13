@@ -364,6 +364,8 @@ with tab1:
     score_columns = ["区间进步得分", "连续进步加分", "排名加分", "总得分"]
     if "总分奖励" in df_display.columns:
         score_columns.append("总分奖励")
+    if "东校状元奖" in df_display.columns:
+        score_columns.append("东校状元奖")
     if "偏科扣分" in df_display.columns:
         score_columns.append("偏科扣分")
     
@@ -647,6 +649,11 @@ with tab4:
         
         if "总分奖励" in student_score.index:
             score_components["总分奖励"] = student_score.get("总分奖励", 0)
+        
+        if "东校状元奖" in student_score.index:
+            champion_bonus = student_score.get("东校状元奖", 0)
+            if champion_bonus != 0:
+                score_components["东校状元奖"] = champion_bonus
         
         if "偏科扣分" in student_score.index:
             bias_penalty = student_score.get("偏科扣分", 0)
@@ -1053,6 +1060,8 @@ with tab5:
             }
             if '总分奖励' in student_score.index:
                 score_breakdown["总分奖励"] = student_score['总分奖励']
+            if '东校状元奖' in student_score.index:
+                score_breakdown["东校状元奖"] = student_score['东校状元奖']
             if '偏科扣分' in student_score.index:
                 score_breakdown["偏科扣分"] = student_score['偏科扣分']
             

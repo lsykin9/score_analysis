@@ -653,6 +653,13 @@ def process_data():
             else:
                 score_add = 0
         
+        # 东校状元奖 - 年级排名第1名的独立奖励
+        champion_add = 0
+        if not is_absent and len(ranks) > 0:
+            latest_rank = int(ranks[-1]) if ranks[-1] else 0
+            if latest_rank == 1:
+                champion_add = st.session_state.get('champion_bonus', 200)
+        
         # 偏科扣分 - 缺考时不扣分
         bias_deduct = 0
         bias_level = "均衡发展"
@@ -710,27 +717,27 @@ def process_data():
                 }
         
         # 总得分
-        total = chain_progress + rank_add + group_rank_add + chain_add + score_add + bias_deduct
+        total = chain_progress + rank_add + group_rank_add + chain_add + score_add + champion_add + bias_deduct
 
         if has_subjects:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, score_add, bias_deduct, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, score_add, champion_add, bias_deduct, total])
         elif score_cols:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, score_add, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, score_add, champion_add, total])
         else:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, champion_add, total])
 
     # 生成结果DataFrame
     if has_subjects:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总分奖励", "偏科扣分", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总分奖励", "东校状元奖", "偏科扣分", "总得分"
         ])
     elif score_cols:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总分奖励", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总分奖励", "东校状元奖", "总得分"
         ])
     else:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "东校状元奖", "总得分"
         ])
     
     df_final = pd.merge(df_all, df_score, on="姓名")
