@@ -11,10 +11,29 @@ import glob
 import json
 from pathlib import Path
 from streamlit.components.v1 import html
+from utils.progress_rules import (
+    TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, describe_progress_rule,
+)
 
 
 # 配置文件路径（作为备用）
 CONFIG_FILE = Path("config/user_settings.json")
+
+
+def _apply_config_params(params):
+    """补全新规则并同步控件，避免加载配置后旧控件值覆盖新值。"""
+    params = dict(params)
+    enabled, limit = get_tie_progress_rule(params)
+    params[TIE_ENABLED] = enabled
+    params[TIE_RANK_LIMIT] = limit
+    st.session_state.config_params = params
+    st.session_state.tie_progress_enabled = enabled
+    st.session_state.tie_progress_grade_rank_limit = limit
+
+
+def _save_tie_progress_values():
+    st.session_state.config_params[TIE_ENABLED] = st.session_state.tie_progress_enabled
+    st.session_state.config_params[TIE_RANK_LIMIT] = st.session_state.tie_progress_grade_rank_limit
 
 
 def _save_to_browser():
@@ -61,7 +80,7 @@ def _load_from_browser():
     if result and result != 'null':
         try:
             config = json.loads(result)
-            st.session_state.config_params = config.get("config_params", {})
+            _apply_config_params(config.get("config_params", {}))
             st.session_state.rank_intervals = config.get("rank_intervals", [])
             st.session_state.rank_bonuses = config.get("rank_bonuses", [])
             st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
@@ -123,7 +142,7 @@ def _load_config():
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
-        st.session_state.config_params = config.get("config_params", {})
+        _apply_config_params(config.get("config_params", {}))
         st.session_state.rank_intervals = config.get("rank_intervals", [])
         st.session_state.rank_bonuses = config.get("rank_bonuses", [])
         st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
@@ -161,7 +180,7 @@ def auto_load_config():
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 
-                st.session_state.config_params = config.get("config_params", {})
+                _apply_config_params(config.get("config_params", {}))
                 st.session_state.rank_intervals = config.get("rank_intervals", [])
                 st.session_state.rank_bonuses = config.get("rank_bonuses", [])
                 st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
@@ -197,7 +216,7 @@ def _try_load_from_browser_silent():
         
         if result and result != 'null' and result is not None:
             config = json.loads(result)
-            st.session_state.config_params = config.get("config_params", {})
+            _apply_config_params(config.get("config_params", {}))
             st.session_state.rank_intervals = config.get("rank_intervals", [])
             st.session_state.rank_bonuses = config.get("rank_bonuses", [])
             st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
@@ -286,6 +305,7 @@ def _reset_to_default():
         "明显偏科_标准差": 8.5,
         "严重偏科_标准差": 10.0
     }
+    _apply_config_params(st.session_state.config_params)
     
     # 各科成绩参考线（默认值，实际分数形式）
     st.session_state.subject_references = {
@@ -335,10 +355,10 @@ def _render_param_settings():
             if st.button("💾 保存配置", use_container_width=True):
                 _save_config()
         with col2:
-            if st.button("📂 加载配置", use_container_width=True):
+            if st.button("📂 加载配置", use_container_width=True, disabled=st.session_state.analysis_started):
                 _load_config()
         with col3:
-            if st.button("🔄 恢复默认", use_container_width=True):
+            if st.button("🔄 恢复默认", use_container_width=True, disabled=st.session_state.analysis_started):
                 _reset_to_default()
         
         st.markdown("---")
@@ -794,6 +814,29 @@ def _render_chain_bonus_settings():
     """渲染连续进步奖励设置"""
     st.markdown("---")
     st.subheader("连续进步奖励")
+
+    enabled, limit = get_tie_progress_rule(st.session_state.config_params)
+    if 'tie_progress_enabled' not in st.session_state:
+        st.session_state.tie_progress_enabled = enabled
+    if 'tie_progress_grade_rank_limit' not in st.session_state:
+        st.session_state.tie_progress_grade_rank_limit = limit
+    st.checkbox(
+        "限定年级排名内持平也计入连续进步",
+        key="tie_progress_enabled",
+        disabled=st.session_state.analysis_started,
+        on_change=_save_tie_progress_values,
+        help="仅根据总分年级排名判断；持平算一次连续进步，但区间进步得分仍为 0。",
+    )
+    st.number_input(
+        "持平计入范围：年级前 N 名（含）",
+        min_value=1,
+        step=1,
+        key="tie_progress_grade_rank_limit",
+        disabled=st.session_state.analysis_started or not st.session_state.tie_progress_enabled,
+        on_change=_save_tie_progress_values,
+    )
+    _save_tie_progress_values()
+    st.caption(describe_progress_rule(st.session_state.config_params))
     
     # 显示当前所有连续进步奖励
     for idx, bonus in enumerate(st.session_state.chain_bonuses):

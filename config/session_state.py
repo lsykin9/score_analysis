@@ -3,6 +3,7 @@ Session State 初始化模块
 负责初始化所有 Streamlit session state 变量
 """
 import streamlit as st
+from utils.progress_rules import TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule
 
 
 def initialize_session_state():
@@ -131,7 +132,11 @@ def initialize_session_state():
             "严重偏科_相对离散度": 300
         }
     
+    # 为已有会话补全持平规则，缺少新字段的旧配置采用新默认值。
+    enabled, limit = get_tie_progress_rule(st.session_state.config_params)
+    st.session_state.config_params.setdefault(TIE_ENABLED, enabled)
+    st.session_state.config_params.setdefault(TIE_RANK_LIMIT, limit)
+
     # 东校状元奖（年级排名第1名的独立奖励）
     if 'champion_bonus' not in st.session_state:
         st.session_state.champion_bonus = 200
-

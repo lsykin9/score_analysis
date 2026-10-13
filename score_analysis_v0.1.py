@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 import os
 import re
+from utils.progress_rules import (
+    TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, calculate_progress_chain,
+)
 
 # === 读取配置 ===
 def read_config(path="参数配置.xlsx", config_dict=None):
@@ -70,7 +73,10 @@ def read_config(path="参数配置.xlsx", config_dict=None):
         "严重偏科": cfg.get("严重偏科扣分", 60)
     }
 
+    tie_enabled, tie_limit = get_tie_progress_rule(cfg)
     return {
+        TIE_ENABLED: tie_enabled,
+        TIE_RANK_LIMIT: tie_limit,
         "weights": weights,
         "rank_bonus": rank_bonus,
         "chain_bonus": chain_bonus,
@@ -504,16 +510,10 @@ def main():
     for _, row in df_all.iterrows():
         name = row["姓名"]
         ranks = [row[col] for col in rank_cols]
-        chain_len = 0
         chain_progress = 0.0
 
-        # 计算连续进步次数
-        for i in range(1, len(ranks)):
-            before, now = ranks[i - 1], ranks[i]
-            if now != 0 and before != 0 and now <= before:
-                chain_len += 1
-            else:
-                chain_len = 0
+        # 与网页共用限定年级排名的持平规则；保留命令行原有缺考中断行为。
+        chain_len, _ = calculate_progress_chain(ranks, config, skip_absent=False)
         
         # 计算最近一次进步得分
         if len(ranks) >= 2:

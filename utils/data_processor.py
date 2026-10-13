@@ -6,6 +6,10 @@ import streamlit as st
 import pandas as pd
 import io
 import os
+from utils.progress_rules import (
+    TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, calculate_progress_chain,
+)
+from utils.rank_history import get_grade_rank_columns, get_rank_history
 from score_analysis_v0_1 import (
     progress_score,
     ranking_bonus,
@@ -19,6 +23,10 @@ from score_analysis_v0_1 import (
 
 def _save_all_input_values():
     """从session_state的临时key中保存所有输入值"""
+    if 'tie_progress_enabled' in st.session_state:
+        st.session_state.config_params[TIE_ENABLED] = st.session_state.tie_progress_enabled
+    if 'tie_progress_grade_rank_limit' in st.session_state:
+        st.session_state.config_params[TIE_RANK_LIMIT] = st.session_state.tie_progress_grade_rank_limit
     # 保存区间值
     for idx, interval in enumerate(st.session_state.rank_intervals):
         interval_id = interval["id"]
@@ -116,7 +124,10 @@ def process_data():
         "严重偏科": cfg.get("严重偏科扣分", 60)
     }
     
+    tie_enabled, tie_limit = get_tie_progress_rule(cfg)
     config = {
+        TIE_ENABLED: tie_enabled,
+        TIE_RANK_LIMIT: tie_limit,
         "weights": weights,
         "rank_bonus": rank_bonus,
         "group_rank_bonus": group_rank_bonus,
@@ -458,20 +469,7 @@ def process_data():
     # 1. 旧格式：排名_xxx 或 年级排名_xxx
     # 2. 新格式：总分年级排名_xxx 或 总分_年级排名_xxx
     # 只保留总分的年级排名列，排除单科排名
-    rank_cols = []
-    for col in df_all.columns:
-        # 新格式：总分年级排名_xxx
-        if col.startswith("总分年级排名_"):
-            rank_cols.append(col)
-        # 旧格式：总分_年级排名_xxx
-        elif col.startswith("总分_年级排名_"):
-            rank_cols.append(col)
-        # 旧格式：年级排名_xxx 或 年级排名（单列）
-        elif col == "年级排名" or col.startswith("年级排名_"):
-            # 排除科目排名列（如：语文年级排名_xxx）
-            is_subject_rank = any(col.startswith(f"{subj}年级排名_") for subj in subjects)
-            if not is_subject_rank:
-                rank_cols.append(col)
+    rank_cols = get_grade_rank_columns(df_all.columns)
     
     # 集团排名列：支持多种格式（必须带考试标识）
     group_rank_cols = []
@@ -510,45 +508,9 @@ def process_data():
         if not isinstance(name, str) or pd.isna(name):
             continue
         
-        # 将排名转换为整数,同时检测每次考试是否有科目缺考
-        ranks = []
-        
-        for col in rank_cols:
-            val = row[col]
-            # 检查val是否为字符串（可能是表头）
-            if isinstance(val, str):
-                continue  # 跳过这一行
-            
-            # 从列名提取考试标识（例如：总分_年级排名_考试2 -> 考试2）
-            exam_label = None
-            if "_年级排名_" in col:
-                exam_label = col.split("_年级排名_")[-1]
-            elif col.startswith("年级排名_"):
-                exam_label = col.replace("年级排名_", "")
-            
-            # 检查该次考试是否有科目缺考
-            is_exam_absent = False
-            if has_subjects and exam_label:
-                for subj in subjects:
-                    # 查找该科目在该次考试的成绩列
-                    subj_col = f"{subj}_{exam_label}"
-                    if subj_col in df_all.columns:
-                        score_val = row[subj_col]
-                        if pd.isna(score_val) or score_val == 0:
-                            is_exam_absent = True
-                            break
-            
-            # 如果该次考试有科目缺考，排名设为0（无效）
-            if is_exam_absent:
-                ranks.append(0)
-            elif pd.isna(val) or val == 0:
-                ranks.append(0)
-            else:
-                try:
-                    ranks.append(int(float(val)))
-                except (ValueError, TypeError):
-                    ranks.append(0)
-        
+        # 与学生详情共用排名和缺考识别，保留每次考试的位置。
+        ranks = get_rank_history(row, rank_cols, subjects if has_subjects else [])
+
         # 检测最新一次考试是否缺考
         # 优先检查科目成绩，如果有科目成绩且任一科为0或空则算缺考
         # 否则看总分排名是否为0
@@ -564,39 +526,11 @@ def process_data():
             # 没有科目成绩时，根据排名判断
             is_absent = (ranks[-1] == 0) if ranks else False
         
-        chain_len = 0
+        # 最新缺考时保留此前连续次数；中间缺考跳过。
+        chain_ranks = ranks[:-1] if is_absent else ranks
+        chain_len, _ = calculate_progress_chain(chain_ranks, config)
         chain_progress = 0.0
-        last_valid_rank_idx = -1  # 记录最后一个非缺考的排名位置
 
-        # 计算连续进步次数（需要跳过缺考，找到前一个有效排名）
-        # 对于 [27, 0, 9, 4]，应该比较: 27→9 (进步), 9→4 (进步)，连续进步2次
-        if is_absent:
-            # 当前缺考，从倒数第二次开始往前找有效成绩
-            for i in range(len(ranks) - 2, -1, -1):
-                if ranks[i] != 0:
-                    last_valid_rank_idx = i
-                    break
-            
-            # 如果找到了有效成绩，计算到该位置为止的连续进步次数
-            if last_valid_rank_idx >= 0:
-                # 从第一个有效排名开始，跳过缺考逐个比较
-                valid_ranks = [r for r in ranks[:last_valid_rank_idx + 1] if r != 0]
-                for i in range(1, len(valid_ranks)):
-                    if valid_ranks[i] < valid_ranks[i - 1]:
-                        chain_len += 1
-                    else:
-                        # 退步则归零
-                        chain_len = 0
-        else:
-            # 当前没有缺考，提取所有有效排名进行比较
-            valid_ranks = [r for r in ranks if r != 0]
-            for i in range(1, len(valid_ranks)):
-                if valid_ranks[i] < valid_ranks[i - 1]:
-                    chain_len += 1
-                else:
-                    # 退步则归零
-                    chain_len = 0
-        
         # 计算最近一次进步得分
         if not is_absent and len(ranks) >= 2:
             _cur = ranks[-1]
