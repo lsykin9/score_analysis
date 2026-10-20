@@ -8,11 +8,18 @@ import io
 import os
 from utils.progress_rules import (
     TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, calculate_progress_chain,
+    RANK_BASIS, get_rank_basis,
 )
-from utils.rank_history import get_grade_rank_columns, get_rank_history
+from utils.rank_history import (
+    get_grade_rank_columns, get_group_rank_columns, get_progress_rank_columns,
+    get_rank_history, get_exam_label, latest_rank_change, compare_rank_changes,
+    correct_tied_score_ranks,
+)
+from config.scoring_schemes import GRADE_REWARD_ENABLED, GROUP_REWARD_ENABLED, SCHEME_LABELS
 from score_analysis_v0_1 import (
     progress_score,
     ranking_bonus,
+    line_bonus_score,
     group_ranking_bonus,
     chain_bonus_score,
     total_score_bonus,
@@ -27,6 +34,12 @@ def _save_all_input_values():
         st.session_state.config_params[TIE_ENABLED] = st.session_state.tie_progress_enabled
     if 'tie_progress_grade_rank_limit' in st.session_state:
         st.session_state.config_params[TIE_RANK_LIMIT] = st.session_state.tie_progress_grade_rank_limit
+    for widget, param in [('line_a_rank', 'A线（排名）'), ('line_a_bonus', 'A线过线奖励'),
+                          ('line_b_rank', 'B线（排名）'), ('line_b_bonus', 'B线过线奖励'),
+                          ('grade_rank_reward_enabled', GRADE_REWARD_ENABLED),
+                          ('group_rank_reward_enabled', GROUP_REWARD_ENABLED)]:
+        if widget in st.session_state:
+            st.session_state.config_params[param] = st.session_state[widget]
     # 保存区间值
     for idx, interval in enumerate(st.session_state.rank_intervals):
         interval_id = interval["id"]
@@ -126,6 +139,7 @@ def process_data():
     
     tie_enabled, tie_limit = get_tie_progress_rule(cfg)
     config = {
+        RANK_BASIS: get_rank_basis(cfg),
         TIE_ENABLED: tie_enabled,
         TIE_RANK_LIMIT: tie_limit,
         "weights": weights,
@@ -462,6 +476,11 @@ def process_data():
     if df_all is None or df_all.empty:
         st.error("❌ 没有可用的数据进行分析")
         st.stop()
+
+    # 学校年级排名可能拆分同分学生；评分前按总分统一其年级名次。
+    corrected_rank_count = correct_tied_score_ranks(df_all)
+    if corrected_rank_count:
+        st.info(f"已自动校正 {corrected_rank_count} 处总分年级排名：同一考试总分相同的学生统一采用最靠前的已有年级名次。")
     
     # 分析得分
     results = []
@@ -470,16 +489,16 @@ def process_data():
     # 2. 新格式：总分年级排名_xxx 或 总分_年级排名_xxx
     # 只保留总分的年级排名列，排除单科排名
     rank_cols = get_grade_rank_columns(df_all.columns)
+    progress_rank_cols = get_progress_rank_columns(df_all.columns, config)
+    if get_rank_basis(config) == 'group':
+        if not progress_rank_cols or progress_rank_cols[-1] not in df_all.columns:
+            raise ValueError("集团排名方案需要本次总分集团排名，请补齐数据或切换年级方案；不会自动用年级排名代替。")
+        missing_exams = [get_exam_label(col) for col in progress_rank_cols[:-1] if col not in df_all.columns]
+        if missing_exams:
+            st.info(f"以下历史考试未提供集团排名，已跳过：{'、'.join(missing_exams)}。连续次数仅比较有效集团排名。")
     
     # 集团排名列：支持多种格式（必须带考试标识）
-    group_rank_cols = []
-    for col in df_all.columns:
-        # 新格式：总分集团排名_xxx
-        if col.startswith("总分集团排名_"):
-            group_rank_cols.append(col)
-        # 旧格式：集团排名_xxx 或 总分_集团排名_xxx
-        elif col.startswith("集团排名_") or col.startswith("总分_集团排名_"):
-            group_rank_cols.append(col)
+    group_rank_cols = get_group_rank_columns(df_all.columns)
     
     # 总分列（排除年级排名和集团排名列）
     score_cols = []
@@ -501,6 +520,7 @@ def process_data():
                 subject_cols_dict[subj] = subj_score_cols[-1]
     
     
+    comparison_results = []
     for idx, row in df_all.iterrows():
         name = row["姓名"]
         
@@ -509,7 +529,16 @@ def process_data():
             continue
         
         # 与学生详情共用排名和缺考识别，保留每次考试的位置。
-        ranks = get_rank_history(row, rank_cols, subjects if has_subjects else [])
+        grade_ranks = get_rank_history(row, rank_cols, subjects if has_subjects else [])
+        group_ranks = get_rank_history(row, get_progress_rank_columns(df_all.columns, {RANK_BASIS: 'group'}),
+                                       subjects if has_subjects else [])
+        ranks = get_rank_history(row, progress_rank_cols, subjects if has_subjects else [])
+        grade_change, group_change = latest_rank_change(grade_ranks), latest_rank_change(group_ranks)
+        comparison_results.append({
+            "评分方案": SCHEME_LABELS[get_rank_basis(config)],
+            "年级进步名次": grade_change, "集团进步名次": group_change,
+            "双排名对照": compare_rank_changes(grade_change, group_change),
+        })
 
         # 检测最新一次考试是否缺考
         # 优先检查科目成绩，如果有科目成绩且任一科为0或空则算缺考
@@ -526,6 +555,9 @@ def process_data():
             # 没有科目成绩时，根据排名判断
             is_absent = (ranks[-1] == 0) if ranks else False
         
+        if get_rank_basis(config) == 'group' and not is_absent and not ranks[-1]:
+            raise ValueError(f"学生 {name} 本次参试但缺少有效总分集团排名，请补齐后再使用集团方案。")
+
         # 最新缺考时保留此前连续次数；中间缺考跳过。
         chain_ranks = ranks[:-1] if is_absent else ranks
         chain_len, _ = calculate_progress_chain(chain_ranks, config)
@@ -550,31 +582,28 @@ def process_data():
 
         # 排名加分（年级排名）- 缺考时不加分
         rank_add = 0
-        if not is_absent and len(ranks) > 0:
-            latest_rank = int(ranks[-1]) if ranks[-1] else 0
+        if not is_absent and grade_ranks and cfg.get(GRADE_REWARD_ENABLED, True):
+            latest_rank = grade_ranks[-1]
             # 找到上一次有效排名（跳过缺考）
             previous_rank = 9999
-            for i in range(len(ranks) - 2, -1, -1):
-                if ranks[i] != 0:
-                    previous_rank = int(ranks[i])
+            for i in range(len(grade_ranks) - 2, -1, -1):
+                if grade_ranks[i] != 0:
+                    previous_rank = grade_ranks[i]
                     break
             rank_add = ranking_bonus(latest_rank, previous_rank, config)
+
+        # A/B 线奖励始终按年级排名独立计算，不受两个排名奖励开关影响。
+        line_add = 0
+        if not is_absent and grade_ranks:
+            line_add = line_bonus_score(grade_ranks[-1], config)
         
         # 集团排名加分 - 缺考时不加分
         group_rank_add = 0
-        if not is_absent and group_rank_cols and len(group_rank_cols) > 0:
-            # 筛选出总分的集团排名列
-            # 支持多种格式：总分_集团排名_xxx, 总分集团排名_xxx, 集团排名_xxx（不包含科目名）
-            total_group_rank_cols = [col for col in group_rank_cols 
-                                    if col.startswith("总分集团排名_") or 
-                                    col.startswith("总分_集团排名_") or 
-                                    (col.startswith("集团排名_") and not any(subj in col for subj in subjects))]
-            
-            if total_group_rank_cols and len(total_group_rank_cols) > 0:
-                latest_group_rank = row[total_group_rank_cols[-1]]
-                if pd.notna(latest_group_rank) and latest_group_rank > 0:
-                    group_rank_add = group_ranking_bonus(int(latest_group_rank), config)
-        
+        if not is_absent and group_ranks and cfg.get(GROUP_REWARD_ENABLED, True):
+            latest_group_rank = group_ranks[-1]
+            if latest_group_rank:
+                group_rank_add = group_ranking_bonus(latest_group_rank, config)
+
         # 连续进步加分
         chain_add = chain_bonus_score(chain_len, config)
         
@@ -589,8 +618,8 @@ def process_data():
         
         # 东校状元奖 - 年级排名第1名的独立奖励
         champion_add = 0
-        if not is_absent and len(ranks) > 0:
-            latest_rank = int(ranks[-1]) if ranks[-1] else 0
+        if not is_absent and grade_ranks:
+            latest_rank = grade_ranks[-1]
             if latest_rank == 1:
                 champion_add = st.session_state.get('champion_bonus', 200)
         
@@ -651,29 +680,30 @@ def process_data():
                 }
         
         # 总得分
-        total = chain_progress + rank_add + group_rank_add + chain_add + score_add + champion_add + bias_deduct
+        total = chain_progress + rank_add + line_add + group_rank_add + chain_add + score_add + champion_add + bias_deduct
 
         if has_subjects:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, score_add, champion_add, bias_deduct, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, line_add, group_rank_add, score_add, champion_add, bias_deduct, total])
         elif score_cols:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, score_add, champion_add, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, line_add, group_rank_add, score_add, champion_add, total])
         else:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, group_rank_add, champion_add, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, line_add, group_rank_add, champion_add, total])
 
     # 生成结果DataFrame
     if has_subjects:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总分奖励", "东校状元奖", "偏科扣分", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "A/B线奖励", "集团排名加分", "总分奖励", "东校状元奖", "偏科扣分", "总得分"
         ])
     elif score_cols:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "总分奖励", "东校状元奖", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "A/B线奖励", "集团排名加分", "总分奖励", "东校状元奖", "总得分"
         ])
     else:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "集团排名加分", "东校状元奖", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "年级排名加分", "A/B线奖励", "集团排名加分", "东校状元奖", "总得分"
         ])
     
+    df_score = pd.concat([df_score, pd.DataFrame(comparison_results)], axis=1)
     df_final = pd.merge(df_all, df_score, on="姓名")
     df_final = df_final.sort_values(by="总得分", ascending=False)
     

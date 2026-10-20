@@ -4,6 +4,7 @@ import os
 import re
 from utils.progress_rules import (
     TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, calculate_progress_chain,
+    RANK_BASIS, get_rank_basis,
 )
 
 # === 读取配置 ===
@@ -75,6 +76,7 @@ def read_config(path="参数配置.xlsx", config_dict=None):
 
     tie_enabled, tie_limit = get_tie_progress_rule(cfg)
     return {
+        RANK_BASIS: get_rank_basis(cfg),
         TIE_ENABLED: tie_enabled,
         TIE_RANK_LIMIT: tie_limit,
         "weights": weights,
@@ -111,6 +113,7 @@ def progress_score(before, now, weights):
 
 # === 排名奖励加分 ===
 def ranking_bonus(now, before, config):
+    """仅计算年级排名档位奖励；A/B 线奖励独立计算。"""
     if now == 0:
         return 0
     
@@ -123,7 +126,13 @@ def ranking_bonus(now, before, config):
             min_threshold = threshold
             bonus = b
     
-    # AB线过线奖励（只加一个，取奖励更高的）
+    return bonus
+
+
+def line_bonus_score(now, config):
+    """按当前年级排名计算 A/B 线奖励，两线同时达标时取较高奖励。"""
+    if pd.isna(now) or now <= 0:
+        return 0
     line_bonus = 0
     if "line_a" in config and "bonus_line_a" in config and "line_b" in config and "bonus_line_b" in config:
         # 新版本：同时有A线和B线
@@ -131,13 +140,12 @@ def ranking_bonus(now, before, config):
             line_bonus = max(line_bonus, config["bonus_line_a"])
         if now <= config["line_b"]:
             line_bonus = max(line_bonus, config["bonus_line_b"])
-        bonus += line_bonus
     elif "line" in config and "bonus_line" in config:
         # 兼容旧版本单线配置
         if now <= config["line"]:
-            bonus += config["bonus_line"]
+            line_bonus = max(0, config["bonus_line"])
     
-    return bonus
+    return line_bonus
 
 # === 集团排名奖励加分 ===
 def group_ranking_bonus(group_rank, config):
@@ -425,6 +433,8 @@ def main():
     print("🚀 启动评分系统（支持灵活排名和连续进步加分）")
 
     config = read_config()
+    if get_rank_basis(config) == 'group':
+        raise ValueError("旧命令行流程不支持集团输入，请使用 Streamlit 网页中的集团排名方案。")
     df_new = pd.read_excel("最新成绩.xlsx")
     
     # 定义各科科目
@@ -528,6 +538,7 @@ def main():
         latest_rank = ranks[-1]
         previous_rank = ranks[-2] if len(ranks) > 1 else 9999
         rank_add = ranking_bonus(latest_rank, previous_rank, config)
+        line_add = line_bonus_score(latest_rank, config)
         
         # 连续进步加分
         chain_add = chain_bonus_score(chain_len, config)
@@ -556,27 +567,27 @@ def main():
             bias_dict[name] = bias_info
         
         # 总得分（包含偏科扣分）
-        total = chain_progress + rank_add + chain_add + score_add + bias_deduct
+        total = chain_progress + rank_add + line_add + chain_add + score_add + bias_deduct
 
         if has_subjects:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, score_add, bias_deduct, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, line_add, score_add, bias_deduct, total])
         elif score_cols:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, score_add, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, line_add, score_add, total])
         else:
-            results.append([name, chain_len, chain_progress, chain_add, rank_add, total])
+            results.append([name, chain_len, chain_progress, chain_add, rank_add, line_add, total])
 
     # 根据是否有总分列和科目列，生成不同的DataFrame
     if has_subjects:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "总分奖励", "偏科扣分", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "A/B线奖励", "总分奖励", "偏科扣分", "总得分"
         ])
     elif score_cols:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "总分奖励", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "A/B线奖励", "总分奖励", "总得分"
         ])
     else:
         df_score = pd.DataFrame(results, columns=[
-            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "总得分"
+            "姓名", "连续进步次数", "区间进步得分", "连续进步加分", "排名加分", "A/B线奖励", "总得分"
         ])
     df_score.to_excel("进步链分析结果.xlsx", index=False)
     print("✅ 已生成进步链分析结果.xlsx")

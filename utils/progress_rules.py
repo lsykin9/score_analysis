@@ -1,21 +1,32 @@
-"""连续进步的共享规则；仅使用总分年级排名判断限定范围。"""
+"""年级/集团方案共用的进步判定与连续次数。"""
 import math
 
 
 TIE_ENABLED = "持平计入连续进步"
-TIE_RANK_LIMIT = "持平计入年级排名上限"
+TIE_RANK_LIMIT = "持平计入排名上限"
+LEGACY_TIE_RANK_LIMIT = "持平计入年级排名上限"
+RANK_BASIS = "进步排名依据"
 DEFAULT_TIE_RANK_LIMIT = 100
 
 
+def get_rank_basis(config):
+    return "group" if config.get(RANK_BASIS) == "group" else "grade"
+
+
+def rank_basis_label(config):
+    return "集团" if get_rank_basis(config) == "group" else "年级"
+
+
 def get_tie_progress_rule(config):
-    """旧配置缺少新字段时，默认启用年级前 100 名持平奖励。"""
+    """兼容旧字段；缺省时年级前 100 名、集团前 200 名持平计入。"""
     enabled = config.get(TIE_ENABLED, True)
     if isinstance(enabled, str):
         enabled = enabled.strip().lower() in {"true", "1", "是", "开启"}
+    default = 200 if get_rank_basis(config) == "group" else DEFAULT_TIE_RANK_LIMIT
     try:
-        limit = max(1, int(config.get(TIE_RANK_LIMIT, DEFAULT_TIE_RANK_LIMIT)))
+        limit = max(1, int(config.get(TIE_RANK_LIMIT, config.get(LEGACY_TIE_RANK_LIMIT, default))))
     except (TypeError, ValueError, OverflowError):
-        limit = DEFAULT_TIE_RANK_LIMIT
+        limit = default
     return bool(enabled), limit
 
 
@@ -48,6 +59,7 @@ def is_current_progress(ranks, config):
 def calculate_progress_chain(ranks, config, *, skip_absent=True):
     """返回当前连续次数和逐次判定；网页跳过缺考，旧命令行可保留中断行为。"""
     enabled, limit = get_tie_progress_rule(config)
+    label = rank_basis_label(config)
     chain_length = 0
     previous = 0
     details = []
@@ -67,13 +79,13 @@ def calculate_progress_chain(ranks, config, *, skip_absent=True):
             elif not enabled:
                 reason = "持平规则关闭，连续次数归零"
             elif current <= limit:
-                reason = f"年级前 {limit} 名内持平，计入一次进步"
+                reason = f"{label}前 {limit} 名内持平，计入一次进步"
             else:
-                reason = f"年级前 {limit} 名外持平，连续次数归零"
+                reason = f"{label}前 {limit} 名外持平，连续次数归零"
             chain_length = chain_length + 1 if counted else 0
             details.append({
-                "上次年级排名": previous,
-                "本次年级排名": current,
+                f"上次{label}排名": previous,
+                f"本次{label}排名": current,
                 "判定": reason,
                 "连续进步次数": chain_length,
             })
@@ -83,7 +95,8 @@ def calculate_progress_chain(ranks, config, *, skip_absent=True):
 
 def describe_progress_rule(config):
     enabled, limit = get_tie_progress_rule(config)
+    label = rank_basis_label(config)
     if enabled:
-        return (f"年级排名提升，或年级前 {limit} 名（含第 {limit} 名）持平，"
+        return (f"{label}排名提升，或{label}前 {limit} 名（含第 {limit} 名）持平，"
                 "均计入一次连续进步；范围外持平或退步归零。持平的区间进步分为 0。")
-    return "仅年级排名严格提升计入连续进步；持平或退步归零。"
+    return f"仅{label}排名严格提升计入连续进步；持平或退步归零。"

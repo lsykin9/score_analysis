@@ -4,6 +4,7 @@ Session State 初始化模块
 """
 import streamlit as st
 from utils.progress_rules import TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule
+from config.scoring_schemes import initialize_scheme_state
 
 
 def initialize_session_state():
@@ -140,3 +141,4 @@ def initialize_session_state():
     # 东校状元奖（年级排名第1名的独立奖励）
     if 'champion_bonus' not in st.session_state:
         st.session_state.champion_bonus = 200
+    initialize_scheme_state(st.session_state)

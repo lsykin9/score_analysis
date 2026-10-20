@@ -13,6 +13,7 @@ spec.loader.exec_module(module)
 read_config = module.read_config
 progress_score = module.progress_score
 ranking_bonus = module.ranking_bonus
+line_bonus_score = module.line_bonus_score
 group_ranking_bonus = module.group_ranking_bonus
 chain_bonus_score = module.chain_bonus_score
 total_score_bonus = module.total_score_bonus

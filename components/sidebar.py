@@ -12,9 +12,14 @@ import json
 from pathlib import Path
 from streamlit.components.v1 import html
 from utils.progress_rules import (
-    TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, describe_progress_rule,
+    TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, describe_progress_rule, rank_basis_label,
 )
 
+
+from config.scoring_schemes import (
+    SCHEME_LABELS, GRADE_REWARD_ENABLED, GROUP_REWARD_ENABLED,
+    capture_active_profile, activate_scheme, restore_scheme_profiles, default_profile,
+)
 
 # 配置文件路径（作为备用）
 CONFIG_FILE = Path("config/user_settings.json")
@@ -36,9 +41,11 @@ def _save_tie_progress_values():
     st.session_state.config_params[TIE_RANK_LIMIT] = st.session_state.tie_progress_grade_rank_limit
 
 
-def _save_to_browser():
-    """保存配置到浏览器 localStorage"""
-    config = {
+def _snapshot_config():
+    from utils.data_processor import _save_all_input_values
+    _save_all_input_values()
+    capture_active_profile(st.session_state)
+    return {
         "config_params": st.session_state.config_params,
         "rank_intervals": st.session_state.rank_intervals,
         "rank_bonuses": st.session_state.rank_bonuses,
@@ -48,8 +55,54 @@ def _save_to_browser():
         "bias_penalties": st.session_state.bias_penalties,
         "subject_references": st.session_state.get("subject_references", {}),
         "champion_bonus": st.session_state.get("champion_bonus", 200),
+        "scoring_scheme": st.session_state.scoring_scheme,
+        "scheme_profiles": st.session_state.scheme_profiles,
     }
-    
+
+
+def _restore_saved_config(config):
+    _apply_config_params(config.get("config_params", {}))
+    for key in ("rank_intervals", "rank_bonuses", "group_rank_bonuses", "chain_bonuses",
+                "score_bonuses", "bias_penalties", "subject_references"):
+        if key in config:
+            st.session_state[key] = config[key]
+    st.session_state.champion_bonus = config.get("champion_bonus", 200)
+    restore_scheme_profiles(st.session_state, config)
+
+
+def _switch_scoring_scheme():
+    from utils.data_processor import _save_all_input_values
+    _save_all_input_values()
+    activate_scheme(st.session_state, st.session_state.scoring_scheme_selector)
+
+
+def _render_scoring_scheme():
+    st.subheader("评分方案")
+    if 'scoring_scheme_selector' not in st.session_state:
+        st.session_state.scoring_scheme_selector = st.session_state.scoring_scheme
+    st.radio(
+        "选择进步评分依据", options=list(SCHEME_LABELS),
+        format_func=SCHEME_LABELS.get, horizontal=True,
+        key="scoring_scheme_selector", on_change=_switch_scoring_scheme,
+        disabled=st.session_state.analysis_started,
+    )
+    st.caption(f"区间进步、连续次数、持平范围和进步人数统一按总分{rank_basis_label(st.session_state.config_params)}排名计算。")
+
+
+def _save_reward_switches():
+    st.session_state.config_params[GRADE_REWARD_ENABLED] = st.session_state.grade_rank_reward_enabled
+    st.session_state.config_params[GROUP_REWARD_ENABLED] = st.session_state.group_rank_reward_enabled
+
+
+def _request_config_action(action):
+    # Fragment 回调只更新状态，实际加载/重置在下次渲染控件前执行。
+    st.session_state.pending_config_action = action
+
+
+def _save_to_browser():
+    """保存配置到浏览器 localStorage"""
+    config = _snapshot_config()
+
     config_json = json.dumps(config, ensure_ascii=False)
     
     # 使用 JavaScript 保存到 localStorage
@@ -80,15 +133,7 @@ def _load_from_browser():
     if result and result != 'null':
         try:
             config = json.loads(result)
-            _apply_config_params(config.get("config_params", {}))
-            st.session_state.rank_intervals = config.get("rank_intervals", [])
-            st.session_state.rank_bonuses = config.get("rank_bonuses", [])
-            st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
-            st.session_state.chain_bonuses = config.get("chain_bonuses", [])
-            st.session_state.score_bonuses = config.get("score_bonuses", [])
-            st.session_state.bias_penalties = config.get("bias_penalties", [])
-            st.session_state.subject_references = config.get("subject_references", {})
-            st.session_state.champion_bonus = config.get("champion_bonus", 200)
+            _restore_saved_config(config)
             return True
         except:
             return False
@@ -104,17 +149,7 @@ def _save_config():
         # 备用：也保存到服务器文件（如果可写）
         try:
             CONFIG_FILE.parent.mkdir(exist_ok=True)
-            config = {
-                "config_params": st.session_state.config_params,
-                "rank_intervals": st.session_state.rank_intervals,
-                "rank_bonuses": st.session_state.rank_bonuses,
-                "group_rank_bonuses": st.session_state.group_rank_bonuses,
-                "chain_bonuses": st.session_state.chain_bonuses,
-                "score_bonuses": st.session_state.score_bonuses,
-                "bias_penalties": st.session_state.bias_penalties,
-                "subject_references": st.session_state.get("subject_references", {}),
-                "champion_bonus": st.session_state.get("champion_bonus", 200),
-            }
+            config = _snapshot_config()
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
         except:
@@ -142,15 +177,7 @@ def _load_config():
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
-        _apply_config_params(config.get("config_params", {}))
-        st.session_state.rank_intervals = config.get("rank_intervals", [])
-        st.session_state.rank_bonuses = config.get("rank_bonuses", [])
-        st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
-        st.session_state.chain_bonuses = config.get("chain_bonuses", [])
-        st.session_state.score_bonuses = config.get("score_bonuses", [])
-        st.session_state.bias_penalties = config.get("bias_penalties", [])
-        st.session_state.subject_references = config.get("subject_references", {})
-        st.session_state.champion_bonus = config.get("champion_bonus", 200)
+        _restore_saved_config(config)
         
         st.success("✅ 已从服务器加载配置！")
         st.rerun()
@@ -180,14 +207,7 @@ def auto_load_config():
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 
-                _apply_config_params(config.get("config_params", {}))
-                st.session_state.rank_intervals = config.get("rank_intervals", [])
-                st.session_state.rank_bonuses = config.get("rank_bonuses", [])
-                st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
-                st.session_state.chain_bonuses = config.get("chain_bonuses", [])
-                st.session_state.score_bonuses = config.get("score_bonuses", [])
-                st.session_state.bias_penalties = config.get("bias_penalties", [])
-                st.session_state.subject_references = config.get("subject_references", {})
+                _restore_saved_config(config)
             except:
                 pass
         
@@ -216,14 +236,7 @@ def _try_load_from_browser_silent():
         
         if result and result != 'null' and result is not None:
             config = json.loads(result)
-            _apply_config_params(config.get("config_params", {}))
-            st.session_state.rank_intervals = config.get("rank_intervals", [])
-            st.session_state.rank_bonuses = config.get("rank_bonuses", [])
-            st.session_state.group_rank_bonuses = config.get("group_rank_bonuses", [])
-            st.session_state.chain_bonuses = config.get("chain_bonuses", [])
-            st.session_state.score_bonuses = config.get("score_bonuses", [])
-            st.session_state.bias_penalties = config.get("bias_penalties", [])
-            st.session_state.subject_references = config.get("subject_references", {})
+            _restore_saved_config(config)
             return True
     except Exception as e:
         # 静默失败，不影响正常使用
@@ -334,6 +347,11 @@ def _reset_to_default():
     for key in keys_to_clear:
         del st.session_state[key]
     
+    basis = st.session_state.scoring_scheme
+    st.session_state.scheme_profiles = {key: default_profile(key) for key in SCHEME_LABELS}
+    activate_scheme(st.session_state, basis, capture=False)
+    st.session_state.scoring_scheme_selector = basis
+
     st.success("✅ 已恢复默认配置！")
     st.rerun()
 
@@ -341,6 +359,11 @@ def _reset_to_default():
 @st.fragment
 def _render_param_settings():
     """渲染参数设置区域（使用fragment避免刷新主页面）"""
+    action = st.session_state.pop('pending_config_action', None)
+    if action == 'load':
+        _load_config()
+    elif action == 'reset':
+        _reset_to_default()
     # 初始化expander状态
     if 'param_expander_expanded' not in st.session_state:
         st.session_state.param_expander_expanded = False
@@ -349,17 +372,19 @@ def _render_param_settings():
     expander = st.expander("📊 评分参数设置", expanded=st.session_state.param_expander_expanded)
     
     with expander:
+        _render_scoring_scheme()
+        st.markdown("---")
         # 添加保存/加载配置按钮
         col1, col2, col3 = st.columns(3)
         with col1:
             if st.button("💾 保存配置", use_container_width=True):
                 _save_config()
         with col2:
-            if st.button("📂 加载配置", use_container_width=True, disabled=st.session_state.analysis_started):
-                _load_config()
+            st.button("📂 加载配置", use_container_width=True, disabled=st.session_state.analysis_started,
+                      on_click=_request_config_action, args=('load',))
         with col3:
-            if st.button("🔄 恢复默认", use_container_width=True, disabled=st.session_state.analysis_started):
-                _reset_to_default()
+            st.button("🔄 恢复默认", use_container_width=True, disabled=st.session_state.analysis_started,
+                      on_click=_request_config_action, args=('reset',))
         
         st.markdown("---")
         
@@ -468,7 +493,7 @@ def _save_score_bonus_values():
 
 def _render_interval_settings():
     """渲染区间权重设置"""
-    st.subheader("区间权重")
+    st.subheader(f"{rank_basis_label(st.session_state.config_params)}排名区间权重")
     
     # 显示当前所有区间
     for idx, interval in enumerate(st.session_state.rank_intervals):
@@ -568,7 +593,8 @@ def _render_interval_settings():
 def _render_line_and_bonus_settings():
     """渲染排名线和过线奖励设置"""
     st.markdown("---")
-    st.subheader("排名线和过线奖励")
+    st.subheader("年级排名线和过线奖励")
+    st.caption("A/B 线奖励独立计算，始终按年级排名判断。")
     
     # 确保 config_params 中有这些 key 的值，并复制到顶层 session_state
     if 'line_a_rank' not in st.session_state:
@@ -652,6 +678,12 @@ def _render_rank_bonus_settings():
     """渲染年级排名奖励设置"""
     st.markdown("---")
     st.subheader("年级排名奖励")
+    if 'grade_rank_reward_enabled' not in st.session_state:
+        st.session_state.grade_rank_reward_enabled = st.session_state.config_params.get(GRADE_REWARD_ENABLED, True)
+    if 'group_rank_reward_enabled' not in st.session_state:
+        st.session_state.group_rank_reward_enabled = st.session_state.config_params.get(GROUP_REWARD_ENABLED, True)
+    st.checkbox("启用年级排名奖励", key="grade_rank_reward_enabled",
+                disabled=st.session_state.analysis_started, on_change=_save_reward_switches)
     
     # 显示当前所有年级排名奖励
     for idx, bonus in enumerate(st.session_state.rank_bonuses):
@@ -733,6 +765,12 @@ def _render_group_rank_bonus_settings():
     """渲染集团排名奖励设置"""
     st.markdown("---")
     st.subheader("集团排名奖励")
+    if 'grade_rank_reward_enabled' not in st.session_state:
+        st.session_state.grade_rank_reward_enabled = st.session_state.config_params.get(GRADE_REWARD_ENABLED, True)
+    if 'group_rank_reward_enabled' not in st.session_state:
+        st.session_state.group_rank_reward_enabled = st.session_state.config_params.get(GROUP_REWARD_ENABLED, True)
+    st.checkbox("启用集团排名奖励", key="group_rank_reward_enabled",
+                disabled=st.session_state.analysis_started, on_change=_save_reward_switches)
     
     # 显示当前所有集团排名奖励
     for idx, bonus in enumerate(st.session_state.group_rank_bonuses):
@@ -821,14 +859,14 @@ def _render_chain_bonus_settings():
     if 'tie_progress_grade_rank_limit' not in st.session_state:
         st.session_state.tie_progress_grade_rank_limit = limit
     st.checkbox(
-        "限定年级排名内持平也计入连续进步",
+        f"限定{rank_basis_label(st.session_state.config_params)}排名内持平也计入连续进步",
         key="tie_progress_enabled",
         disabled=st.session_state.analysis_started,
         on_change=_save_tie_progress_values,
-        help="仅根据总分年级排名判断；持平算一次连续进步，但区间进步得分仍为 0。",
+        help="根据当前方案的总分排名判断；持平算一次连续进步，但区间进步得分仍为 0。",
     )
     st.number_input(
-        "持平计入范围：年级前 N 名（含）",
+        f"持平计入范围：{rank_basis_label(st.session_state.config_params)}前 N 名（含）",
         min_value=1,
         step=1,
         key="tie_progress_grade_rank_limit",
@@ -1353,7 +1391,8 @@ def _render_usage_info():
     st.markdown("### ℹ️ 使用说明")
     st.info("""
     📌 **操作流程**
-    1. (可选) 在「评分参数设置」中调整参数
+    1. 在「评分参数设置」顶部选择年级或集团方案
+       并核对该方案的区间权重、持平范围和奖励
     2. (可选) 上传历史成绩总表
     3. 连续上传新的成绩文件
     4. 确认文件列表和顺序无误
@@ -1363,8 +1402,9 @@ def _render_usage_info():
     
     💡 **提示**
     - 参数配置可在顶部「评分参数设置」中调整
-    - 点击「💾 保存配置」将配置保存到浏览器
-    - 下次用同一浏览器访问会自动加载配置
+    - 切换方案保留两套独立参数，分析后方案和参数锁定
+    - 点击「💾 保存配置」一起保存两套方案及共用参数
+    - 重新打开后请核对配置；浏览器恢复尚未验证
     - 如果上传了历史总表，新成绩将接续在后面
     - 文件顺序会自动标记（第N次）
     - 可以随时删除已上传的文件重新上传

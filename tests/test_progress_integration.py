@@ -61,7 +61,7 @@ def upload_files(ranks, column_count=22, absent_exam=None, group_rank=50):
     for index, rank in enumerate(ranks, 1):
         output = BytesIO()
         exam_dataframe(rank, column_count, '数学' if index == absent_exam else None,
-                       group_rank).to_excel(output, index=False)
+                       group_rank[index - 1] if isinstance(group_rank, list) else group_rank).to_excel(output, index=False)
         files.append({'name': f'考试{index}.xlsx', 'content': output.getvalue(),
                       'exam_num': index, 'exam_label': f'月考{index}'})
     return files
