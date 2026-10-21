@@ -17,6 +17,7 @@ from config.session_state import initialize_session_state
 
 # 导入组件
 from components.sidebar import render_sidebar, auto_load_config
+from components.critical_students import render_critical_students
 
 # 导入工具
 from utils.data_processor import process_data
@@ -29,6 +30,9 @@ from utils.rank_history import (
     get_exam_label, get_rank_history,
 )
 from config.scoring_schemes import SCHEME_LABELS, GRADE_REWARD_ENABLED, GROUP_REWARD_ENABLED
+from config.bias_rules import BIAS_LEVELS, BIAS_BALANCED, describe_bias_rule
+from utils.subject_bias import prepare_bias_exams
+from utils.critical_students import build_critical_analysis
 
 # 导入原有的评分逻辑
 from score_analysis_v0_1 import (
@@ -264,11 +268,23 @@ st.session_state['subjects'] = subjects
 st.session_state['bias_dict'] = bias_dict
 st.session_state['exam_labels'] = exam_labels
 
+# 临界生结果只在当前数据或评分配置变化后重建，筛选和选择学生复用会话缓存。
+critical_analysis = None
+if has_subjects:
+    critical_key = st.session_state['_analysis_cache']['key'] + ':critical-v1'
+    if st.session_state.get('_critical_cache', {}).get('key') != critical_key:
+        labels = [get_exam_label(col) for col in progress_rank_cols]
+        st.session_state['_critical_cache'] = {
+            'key': critical_key, 'data': build_critical_analysis(df_all, labels, bias_dict),
+        }
+    critical_analysis = st.session_state['_critical_cache']['data']
+
 # 主界面 - 标签页
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, critical_tab, tab4, tab5, tab6 = st.tabs([
     "📊 总览", 
     "📈 进步分析", 
     "🎯 偏科检测", 
+    "🎓 临界生",
     "👤 学生详情", 
     "🔍 得分详情",
     "💾 导出结果"
@@ -290,7 +306,7 @@ with tab1:
     
     with col3:
         if has_subjects:
-            bias_count = len(df_bias[df_bias["偏科等级"] != "均衡发展"])
+            bias_count = len(df_bias[df_bias["偏科等级"].isin(BIAS_LEVELS)])
             st.metric("偏科人数", bias_count)
         else:
             st.metric("偏科检测", "需要科目成绩")
@@ -406,19 +422,15 @@ with tab1:
                 if col.startswith(f"{subj}_"):
                     format_dict[col] = "{:.1f}"
     
-    try:
-        display_data = df_display.style.background_gradient(
-            subset=['总得分'], cmap='RdYlGn'
-        ).format(format_dict)
-    except KeyError as error:
-        # pandas Styler loads Matplotlib, whose macOS font scan may fail when
-        # system_profiler returns an incomplete plist without the _items key.
-        if error.args != ('_items',):
-            raise
-        display_data = df_display
-        st.info("表格颜色渐变暂不可用，成绩数据和评分不受影响。")
-
-    st.dataframe(display_data, use_container_width=True, height=400)
+    # 使用 Streamlit 原生数值格式，避免 Styler 引入 Matplotlib 和 macOS 字体扫描。
+    column_config = {
+        column: st.column_config.NumberColumn(
+            column, format="%.0f" if pattern == "{:.0f}" else "%.1f"
+        )
+        for column, pattern in format_dict.items()
+    }
+    st.dataframe(df_display, column_config=column_config,
+                 use_container_width=True, height=400)
 
 # Tab 2: 进步分析
 with tab2:
@@ -604,10 +616,10 @@ with tab3:
             title="",
             color=bias_counts.index,
             color_discrete_map={
-                "均衡发展": "#90EE90",
+                BIAS_BALANCED: "#90EE90",
                 "轻微偏科": "#FFD700",
                 "明显偏科": "#FFA500",
-                "严重偏科": "#FF6347"
+                "重度偏科": "#FF6347"
             }
         )
         fig.update_traces(textposition='inside', textinfo='percent+label')
@@ -618,25 +630,60 @@ with tab3:
         # 偏科学生详情
         st.subheader("偏科学生详情")
         
-        biased_students = df_bias[df_bias["偏科等级"] != "均衡发展"]
-        
+        st.caption(describe_bias_rule())
+        st.caption("以各场物理类 A/B 分数线为参照，不使用班级均分。化学、生物按选科线各取一半。偏科等级为最终计分档位，本次与持续诊断分别展示。")
+        line_exams = prepare_bias_exams(df_all, [get_exam_label(col) for col in progress_rank_cols], subjects)
+        line_issues = [f"{exam['考试']}：{exam['资料说明']}" for exam in line_exams if exam['资料说明']]
+        if line_issues:
+            st.info("以下考试不参与偏科判定，也不借用其他场次的分数线：" + "；".join(line_issues))
+        line_rows = [dict(考试=exam['考试'], 科目=subject,
+                          A线=exam['分数线']['A'].get(subject), B线=exam['分数线']['B'].get(subject),
+                          来源=exam['分数线'].get('来源', ''), 资料说明=exam['资料说明'])
+                     for exam in line_exams for subject in subjects]
+        with st.expander("查看每场使用的 A/B 分数线"):
+            st.dataframe(pd.DataFrame(line_rows), use_container_width=True, hide_index=True)
+        biased_students = df_bias[df_bias["偏科等级"].isin(BIAS_LEVELS)]
+        unavailable = df_bias[~df_bias["偏科等级"].isin((*BIAS_LEVELS, BIAS_BALANCED))]
         if len(biased_students) > 0:
-            # 格式化显示（差值为得分率百分比）
-            format_dict = {
-                "差值标准差": "{:.2f}%",
-                "平均差值": "{:.2f}%",
-                "最强科差值": "{:.2f}%",
-                "最弱科差值": "{:.2f}%",
-                "扣分": "{:.0f}"
-            }
-            st.dataframe(
-                biased_students.style.background_gradient(subset=['差值标准差'], cmap='YlOrRd').format(format_dict),
-                use_container_width=True
-            )
-        else:
-            st.success("🎉 太棒了！所有学生均衡发展，没有偏科现象！")
+            st.dataframe(biased_students, use_container_width=True, hide_index=True,
+                         column_config={"偏科指数": st.column_config.NumberColumn(format="%.3f")})
+        elif len(df_bias) > len(unavailable):
+            st.success("可判定学生中，未发现达到当前计分条件的学科短板。")
+        if len(unavailable):
+            st.info(f"另有 {len(unavailable)} 人缺考或数据不足，本次不作偏科扣分。")
+            st.dataframe(unavailable[['姓名', '偏科等级', '判定说明']],
+                         use_container_width=True, hide_index=True)
+        diagnosis_student = st.selectbox('查看个人偏科历史', df_all['姓名'].tolist(), key='bias_history_student')
+        diagnosis = bias_dict.get(diagnosis_student, {})
+        if diagnosis:
+            cols = st.columns(3)
+            cols[0].metric('本次偏科等级', diagnosis['本次偏科等级'])
+            cols[1].metric('持续偏科等级', diagnosis['持续偏科等级'])
+            cols[2].metric('最终计分等级', diagnosis['偏科等级'])
+            st.caption(diagnosis['判定说明'])
+            st.subheader('最近多场持续性分析')
+            st.dataframe(pd.DataFrame(diagnosis['持续学科明细']), use_container_width=True, hide_index=True)
+            st.subheader('历次总分与目标线差')
+            st.dataframe(pd.DataFrame(diagnosis['考试汇总']), use_container_width=True, hide_index=True)
+            history = pd.DataFrame(diagnosis['历史明细'])
+            if not history.empty:
+                st.subheader('各科短板差距变化')
+                chart = px.line(history, x='考试', y='短板差距', color='科目', markers=True,
+                                category_orders={'考试': list(dict.fromkeys(history['考试']))})
+                chart.add_hline(y=st.session_state.config_params['轻微偏科_AB档差距'], line_dash='dash')
+                chart.update_traces(connectgaps=False)
+                st.plotly_chart(chart, use_container_width=True)
+                with st.expander('查看历次各科分数、线差和判定明细'):
+                    st.dataframe(history, use_container_width=True, hide_index=True)
 
-# Tab 4: 学生详情
+with critical_tab:
+    if critical_analysis is None:
+        st.header('🎓 临界生')
+        st.info('临界生分析需要六科成绩和物理类A线，请上传包含分数线的新模板。')
+    else:
+        render_critical_students(critical_analysis)
+
+# 学生详情
 with tab4:
     st.header("👤 学生详情查询")
     
@@ -825,13 +872,10 @@ with tab4:
             
             subject_scores = {}
             for subj in subjects:
-                # 只提取分数列，排除年级排名和集团排名列
-                subj_score_cols = [col for col in df_all.columns 
-                                  if col.startswith(f"{subj}_") 
-                                  and "年级排名" not in col 
-                                  and "集团排名" not in col]
-                if subj_score_cols:
-                    subject_scores[subj] = student_data[subj_score_cols[-1]]
+                latest_label = get_exam_label(progress_rank_cols[-1]) if progress_rank_cols else ''
+                column = f'{subj}_{latest_label}'
+                if column in df_all.columns:
+                    subject_scores[subj] = student_data[column]
             
             fig = px.bar(
                 x=list(subject_scores.keys()),
@@ -1042,10 +1086,17 @@ with tab5:
             if not student_bias.empty:
                 bias_info = student_bias.iloc[0]
                 st.write(f"**偏科等级**: {bias_info['偏科等级']}")
-                st.write(f"**差值标准差**: {bias_info['差值标准差']:.2f}分")
-                st.write(f"**平均差值**: {bias_info['平均差值']:.2f}分（整体水平）")
-                st.write(f"**最强科目**: {bias_info['最强科目']}（超参考线{bias_info['最强科差值']:.1f}分）")
-                st.write(f"**最弱科目**: {bias_info['最弱科目']}（{'超' if bias_info['最弱科差值'] >= 0 else '低于'}参考线{abs(bias_info['最弱科差值']):.1f}分）")
+                bias_details = bias_dict.get(selected_student, {})
+                index = bias_details.get('偏科指数')
+                st.write(f"**本次偏科指数（A/B档位差距）**: {index:.3f}" if index is not None else "**本次偏科指数**: 暂不能判定")
+                st.write(f"**本次等级**: {bias_details.get('本次偏科等级', '数据不足')}；**持续等级**: {bias_details.get('持续偏科等级', '待观察')}")
+                st.write(f"**薄弱科目**: {'、'.join(bias_details.get('薄弱科目', [])) or '-'}")
+                st.caption(bias_details.get('判定说明', ''))
+                if bias_details.get('学科明细'):
+                    st.dataframe(pd.DataFrame(bias_details['学科明细']), use_container_width=True, hide_index=True)
+                if bias_details.get('持续学科明细'):
+                    st.dataframe(pd.DataFrame(bias_details['持续学科明细']), use_container_width=True, hide_index=True)
+
                 st.write(f"**偏科扣分**: {student_score['偏科扣分']:.1f}")
         
         # 8. 总得分
@@ -1082,45 +1133,42 @@ with tab6:
     st.subheader("1. 导出成绩总表（仅原始数据）")
     st.info("💡 此文件包含多个工作表，每次考试一个工作表，方便管理和查看")
     
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # 新格式：每次考试单独保存为一个工作表
-        # 从 df_all 中提取每次考试的数据
-        import re
-        
-        # 获取所有考试的列名（通过识别带考试标识的列）
-        exam_labels_dict = {}  # {exam_label: first_col_index}
-        for idx, col in enumerate(df_all.columns):
-            if col == "姓名":
-                continue
-            match = re.search(r'_(.+)$', col)
-            if match:
-                exam_label = match.group(1)
-                if exam_label not in exam_labels_dict:
-                    exam_labels_dict[exam_label] = idx  # 记录该考试第一次出现的列索引
-        
-        # 按列的出现顺序排序考试（从旧到新）
-        exam_labels_sorted = sorted(exam_labels_dict.keys(), key=lambda x: exam_labels_dict[x])
-        
-        # 为每次考试创建一个工作表
-        for exam_label in exam_labels_sorted:
-            # 提取该次考试的所有列
-            cols_for_exam = ["姓名"] + [col for col in df_all.columns if col.endswith(f"_{exam_label}")]
-            df_exam = df_all[cols_for_exam].copy()
-            
-            # 去掉列名中的考试标识后缀（使工作表内数据更简洁）
-            df_exam.columns = [col.replace(f"_{exam_label}", "") if col != "姓名" else col for col in df_exam.columns]
-            
-            # 使用考试名称作为工作表名称（Excel工作表名最长31字符）
-            sheet_name = exam_label[:31] if len(exam_label) > 31 else exam_label
-            df_exam.to_excel(writer, sheet_name=sheet_name, index=False)
-        
-        # 同时保留一个完整的总表（可选）
-        df_all.to_excel(writer, sheet_name='完整总表', index=False)
-    
+    # 同一批成绩的下载文件只生成一次，筛选或切换学生时复用。
+    export_key = st.session_state['_analysis_cache']['key'] + ':ab-history-v3:critical-v1'
+    if st.session_state.get('_export_cache', {}).get('key') != export_key:
+        st.session_state['_export_cache'] = {'key': export_key}
+    export_cache = st.session_state['_export_cache']
+
+    if 'raw' not in export_cache:
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # 新格式：每次考试单独保存为一个工作表
+            # 从 df_all 中提取每次考试的数据
+            import re
+
+            # 考试顺序与评分一致，分数线列不被误识别为另一场考试。
+            exam_labels_sorted = list(dict.fromkeys(get_exam_label(col) for col in progress_rank_cols))
+
+            # 为每次考试创建一个工作表
+            for exam_label in exam_labels_sorted:
+                # 提取该次考试的所有列
+                cols_for_exam = ["姓名"] + [col for col in df_all.columns if col.endswith(f"_{exam_label}")]
+                df_exam = df_all[cols_for_exam].copy()
+
+                # 去掉列名中的考试标识后缀（使工作表内数据更简洁）
+                df_exam.columns = [col.replace(f"_{exam_label}", "") if col != "姓名" else col for col in df_exam.columns]
+
+                # 使用考试名称作为工作表名称（Excel工作表名最长31字符）
+                sheet_name = exam_label[:31] if len(exam_label) > 31 else exam_label
+                df_exam.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            # 同时保留一个完整的总表（可选）
+            df_all.to_excel(writer, sheet_name='完整总表', index=False)
+        export_cache['raw'] = output.getvalue()
+
     st.download_button(
         label="📥 下载成绩总表（原始数据）",
-        data=output.getvalue(),
+        data=export_cache['raw'],
         file_name="成绩总表.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
@@ -1131,40 +1179,68 @@ with tab6:
     st.subheader("2. 导出完整分析结果")
     st.info("💡 此文件包含原始数据、得分明细和偏科分析，用于查看完整结果")
     
-    output2 = BytesIO()
-    with pd.ExcelWriter(output2, engine='openpyxl') as writer:
-        df_final.to_excel(writer, sheet_name='完整结果', index=False)
-        df_score.to_excel(writer, sheet_name='得分明细', index=False)
-        tie_enabled, tie_limit = get_tie_progress_rule(st.session_state.config_params)
-        pd.DataFrame([
-            {"项目": "评分方案", "设置": SCHEME_LABELS[get_rank_basis(st.session_state.config_params)]},
-            {"项目": "进步排名依据", "设置": f"总分{progress_basis}排名"},
-            {"项目": "年级排名奖励", "设置": "开启" if st.session_state.config_params.get(GRADE_REWARD_ENABLED, True) else "关闭"},
-            {"项目": "A/B线奖励", "设置": "独立计算，按年级排名达标发放，两线取较高奖励"},
-            {"项目": "集团排名奖励", "设置": "开启" if st.session_state.config_params.get(GROUP_REWARD_ENABLED, True) else "关闭"},
-            {"项目": f"限定{progress_basis}排名内持平计入连续进步", "设置": "开启" if tie_enabled else "关闭"},
-            {"项目": f"{progress_basis}排名上限（含）", "设置": tie_limit},
-            {"项目": "连续进步规则", "设置": describe_progress_rule(st.session_state.config_params)},
-            {"项目": "缺考处理", "设置": "跳过缺考；最新缺考保留此前连续次数，本次不增加"},
-            {"项目": "持平区间进步得分", "设置": 0},
-        ]).to_excel(writer, sheet_name='连续进步规则', index=False)
-        parameter_rows = []
-        for item in st.session_state.rank_intervals:
-            parameter_rows.append({"类别": f"{progress_basis}区间权重", "条件": f"{item['start']}～{item['end']}名", "数值": item['weight']})
-        for item in st.session_state.chain_bonuses:
-            parameter_rows.append({"类别": "连续奖励", "条件": f"连续{item['times']}次", "数值": item['bonus']})
-        for key, label in [('rank_bonuses', '年级排名奖励'), ('group_rank_bonuses', '集团排名奖励')]:
-            for item in st.session_state[key]:
-                parameter_rows.append({"类别": label, "条件": f"前{item['threshold']}名", "数值": item['bonus']})
-        for line in ['A', 'B']:
-            parameter_rows.append({"类别": f"{line}线年级奖励", "条件": f"前{st.session_state.config_params[f'{line}线（排名）']}名", "数值": st.session_state.config_params[f'{line}线过线奖励']})
-        pd.DataFrame(parameter_rows).to_excel(writer, sheet_name='当前方案参数', index=False)
-        if has_subjects and df_bias is not None:
-            df_bias.to_excel(writer, sheet_name='偏科检测', index=False)
-    
+    if 'analysis' not in export_cache:
+        output2 = BytesIO()
+        with pd.ExcelWriter(output2, engine='openpyxl') as writer:
+            df_final.to_excel(writer, sheet_name='完整结果', index=False)
+            df_score.to_excel(writer, sheet_name='得分明细', index=False)
+            tie_enabled, tie_limit = get_tie_progress_rule(st.session_state.config_params)
+            pd.DataFrame([
+                {"项目": "评分方案", "设置": SCHEME_LABELS[get_rank_basis(st.session_state.config_params)]},
+                {"项目": "进步排名依据", "设置": f"总分{progress_basis}排名"},
+                {"项目": "年级排名奖励", "设置": "开启" if st.session_state.config_params.get(GRADE_REWARD_ENABLED, True) else "关闭"},
+                {"项目": "A/B线奖励", "设置": "独立计算，按年级排名达标发放，两线取较高奖励"},
+                {"项目": "集团排名奖励", "设置": "开启" if st.session_state.config_params.get(GROUP_REWARD_ENABLED, True) else "关闭"},
+                {"项目": f"限定{progress_basis}排名内持平计入连续进步", "设置": "开启" if tie_enabled else "关闭"},
+                {"项目": f"{progress_basis}排名上限（含）", "设置": tie_limit},
+                {"项目": "连续进步规则", "设置": describe_progress_rule(st.session_state.config_params)},
+                {"项目": "缺考处理", "设置": "跳过缺考；最新缺考保留此前连续次数，本次不增加"},
+                {"项目": "持平区间进步得分", "设置": 0},
+            ]).to_excel(writer, sheet_name='连续进步规则', index=False)
+            parameter_rows = []
+            for item in st.session_state.rank_intervals:
+                parameter_rows.append({"类别": f"{progress_basis}区间权重", "条件": f"{item['start']}～{item['end']}名", "数值": item['weight']})
+            for item in st.session_state.chain_bonuses:
+                parameter_rows.append({"类别": "连续奖励", "条件": f"连续{item['times']}次", "数值": item['bonus']})
+            for key, label in [('rank_bonuses', '年级排名奖励'), ('group_rank_bonuses', '集团排名奖励')]:
+                for item in st.session_state[key]:
+                    parameter_rows.append({"类别": label, "条件": f"前{item['threshold']}名", "数值": item['bonus']})
+            for line in ['A', 'B']:
+                parameter_rows.append({"类别": f"{line}线年级奖励", "条件": f"前{st.session_state.config_params[f'{line}线（排名）']}名", "数值": st.session_state.config_params[f'{line}线过线奖励']})
+            pd.DataFrame(parameter_rows).to_excel(writer, sheet_name='当前方案参数', index=False)
+            if has_subjects and df_bias is not None:
+                df_bias.to_excel(writer, sheet_name='偏科检测', index=False)
+                detail_rows = [dict(姓名=name, 分析考试=info['分析考试'], **detail)
+                               for name, info in bias_dict.items() for detail in info['学科明细']]
+                pd.DataFrame(detail_rows).to_excel(writer, sheet_name='偏科学科明细', index=False)
+                for field, sheet in [('历史明细', '偏科历史明细'), ('持续学科明细', '持续偏科明细'),
+                                     ('考试汇总', '偏科考试汇总')]:
+                    rows = [dict(姓名=name, **record) for name, info in bias_dict.items() for record in info[field]]
+                    pd.DataFrame(rows).to_excel(writer, sheet_name=sheet, index=False)
+                pd.DataFrame(line_rows).to_excel(writer, sheet_name='偏科分数线', index=False)
+                bias_rules = [{"项目": "算法", "设置": describe_bias_rule()},
+                              {"项目": "参照范围", "设置": "各场物理类A/B分数线，不使用班级均分"},
+                              {"项目": "选科线拆分", "设置": "按用户规则，化学、生物各取选科合计线的一半"},
+                              {"项目": "缺少分数线", "设置": "该场不参与偏科判定；若本次缺少则本次不扣分"},
+                              {"项目": "指数单位", "设置": "一个A/B档位即该科A线与B线之差；阈值和扣分属于教学规则"}]
+                for level in BIAS_LEVELS:
+                    bias_rules.extend([
+                        {"项目": level + "差距阈值", "设置": st.session_state.config_params[level + '_AB档差距']},
+                        {"项目": level + "扣分", "设置": st.session_state.config_params[level + '扣分']},
+                    ])
+                pd.DataFrame(bias_rules).to_excel(writer, sheet_name='偏科规则', index=False)
+            if critical_analysis is not None:
+                critical_summary = critical_analysis['summary']
+                watchlist = (critical_summary[critical_summary['观察名单']]
+                             if not critical_summary.empty else critical_summary)
+                watchlist.to_excel(writer, sheet_name='临界生名单', index=False)
+                critical_analysis['history'].to_excel(writer, sheet_name='临界生历史', index=False)
+                critical_analysis['rules'].to_excel(writer, sheet_name='临界生规则', index=False)
+        export_cache['analysis'] = output2.getvalue()
+
     st.download_button(
         label="📥 下载完整分析结果",
-        data=output2.getvalue(),
+        data=export_cache['analysis'],
         file_name="完整分析结果.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )

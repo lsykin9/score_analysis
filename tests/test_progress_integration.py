@@ -248,7 +248,7 @@ class ProgressIntegrationTests(unittest.TestCase):
         with patch('streamlit.download_button', side_effect=capture_download):
             app.run()
         self.assert_app_ok(app)
-        self.assertEqual(len(app.tabs), 6)
+        self.assertEqual(len(app.tabs), 7)
         self.assertEqual(next(m for m in app.metric if m.label == '进步人数').value, '1')
         self.assertTrue(app.checkbox(key='tie_progress_enabled').disabled)
         self.assertTrue(app.number_input(key='tie_progress_grade_rank_limit').disabled)

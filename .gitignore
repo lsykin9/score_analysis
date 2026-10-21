@@ -46,3 +46,4 @@ config/user_settings.json
 
 # pytest
 .pytest_cache/
+.cache/

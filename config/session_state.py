@@ -5,6 +5,7 @@ Session State 初始化模块
 import streamlit as st
 from utils.progress_rules import TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule
 from config.scoring_schemes import initialize_scheme_state
+from config.bias_rules import BIAS_DEFAULTS, normalize_bias_params
 
 
 def initialize_session_state():
@@ -106,9 +107,9 @@ def initialize_session_state():
     # 动态偏科扣分列表
     if 'bias_penalties' not in st.session_state:
         st.session_state.bias_penalties = [
-            {"id": 0, "level": "轻微", "penalty": 20},
-            {"id": 1, "level": "明显", "penalty": 40},
-            {"id": 2, "level": "严重", "penalty": 70}
+            {"id": 0, "level": "轻微", "penalty": 10},
+            {"id": 1, "level": "明显", "penalty": 25},
+            {"id": 2, "level": "重度", "penalty": 45}
         ]
 
     # 默认参数配置
@@ -118,20 +119,10 @@ def initialize_session_state():
             "A线过线奖励": 100,
             "B线（排名）": 430,
             "B线过线奖励": 0,
-            "轻微偏科扣分": 20,
-            "明显偏科扣分": 40,
-            "严重偏科扣分": 70,
-            # 偏科判定阈值（基于排名的混合法）
-            "轻微偏科_标准差": 15,
-            "轻微偏科_最大差距": 50,
-            "轻微偏科_相对离散度": 80,
-            "明显偏科_标准差": 30,
-            "明显偏科_最大差距": 100,
-            "明显偏科_相对离散度": 150,
-            "严重偏科_标准差": 60,
-            "严重偏科_最大差距": 200,
-            "严重偏科_相对离散度": 300
+            **BIAS_DEFAULTS,
         }
+
+    st.session_state.config_params = normalize_bias_params(st.session_state.config_params)
     
     # 为已有会话补全持平规则，缺少新字段的旧配置采用新默认值。
     enabled, limit = get_tie_progress_rule(st.session_state.config_params)

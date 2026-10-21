@@ -10,6 +10,7 @@ import os
 import glob
 import json
 from pathlib import Path
+from config.bias_rules import BIAS_DEFAULTS, BIAS_LEVELS, normalize_bias_params, describe_bias_rule
 from streamlit.components.v1 import html
 from utils.progress_rules import (
     TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, describe_progress_rule, rank_basis_label,
@@ -27,7 +28,10 @@ CONFIG_FILE = Path("config/user_settings.json")
 
 def _apply_config_params(params):
     """补全新规则并同步控件，避免加载配置后旧控件值覆盖新值。"""
-    params = dict(params)
+    params = normalize_bias_params(params)
+    for key in list(st.session_state):
+        if key.startswith(('bias_v2_', 'bias_v3_')):
+            del st.session_state[key]
     enabled, limit = get_tie_progress_rule(params)
     params[TIE_ENABLED] = enabled
     params[TIE_RANK_LIMIT] = limit
@@ -301,9 +305,9 @@ def _reset_to_default():
     st.session_state.next_score_bonus_id = 9
     
     st.session_state.bias_penalties = [
-        {"id": 0, "level": "轻微", "penalty": 20},
-        {"id": 1, "level": "明显", "penalty": 40},
-        {"id": 2, "level": "严重", "penalty": 70}
+        {"id": 0, "level": "轻微", "penalty": 10},
+        {"id": 1, "level": "明显", "penalty": 25},
+        {"id": 2, "level": "重度", "penalty": 45}
     ]
     
     st.session_state.config_params = {
@@ -311,12 +315,7 @@ def _reset_to_default():
         "A线过线奖励": 100,
         "B线（排名）": 430,
         "B线过线奖励": 0,
-        "轻微偏科扣分": 20,
-        "明显偏科扣分": 40,
-        "严重偏科扣分": 70,
-        "轻微偏科_标准差": 7.5,
-        "明显偏科_标准差": 8.5,
-        "严重偏科_标准差": 10.0
+        **BIAS_DEFAULTS,
     }
     _apply_config_params(st.session_state.config_params)
     
@@ -1034,178 +1033,26 @@ def _render_score_bonus_settings():
 
 
 def _render_bias_penalty_settings():
-    """渲染偏科扣分设置"""
+    """A/B 目标档位差距及阶梯扣分。"""
     st.markdown("---")
     st.subheader("偏科判定与扣分")
-    
-    # 各科成绩参考线设置
-    st.markdown("**📏 各科成绩参考线（实际分数）**")
-    st.caption("设置各科目的分数参考线，用于判定学生是否偏科（基于各科得分率与参考线的差值）")
-    st.info("💡 注意：偏科分析时，化学和生物会合并为'选科'整体分析。请输入实际分数，程序会自动转换为得分率进行比较")
-    
-    # 初始化subject_references（实际分数形式，内部会转换为百分比）
-    if 'subject_references' not in st.session_state:
-        st.session_state.subject_references = {
-            "语文": 105, "数学": 105, "英语": 105,
-            "物理": 70, "选科": 140,  # 选科 = 化学 + 生物
-            "政治": 70, "历史": 70, "地理": 70
-        }
-    
-    # 根据当前数据中的科目显示参考线设置
-    current_subjects = st.session_state.get('subjects', [])
-    
-    if current_subjects:
-        # 检查是否同时有化学和生物
-        has_chem = "化学" in current_subjects
-        has_bio = "生物" in current_subjects
-        
-        # 动态显示当前数据中的科目（化学和生物合并为选科）
-        display_subjects = []
-        for subj in current_subjects:
-            if subj not in ["化学", "生物"]:
-                display_subjects.append(subj)
-        
-        # 如果有化学或生物，添加"选科"
-        if has_chem or has_bio:
-            display_subjects.append("选科")
-        
-        cols = st.columns(3)
-        for idx, subject in enumerate(display_subjects):
-            with cols[idx % 3]:
-                if subject == "选科":
-                    default_val = st.session_state.subject_references.get("选科", 140)
-                    score_input = st.number_input(
-                        "选科参考线",
-                        value=default_val,
-                        min_value=0,
-                        max_value=200,
-                        step=1,
-                        disabled=st.session_state.analysis_started,
-                        help="选科（化学+生物）的总分参考线，满分200分"
-                    )
-                    # 转换为百分比存储（内部使用）
-                    st.session_state.subject_references["选科"] = score_input
-                else:
-                    # 根据科目确定满分
-                    if subject in ["语文", "数学", "英语"]:
-                        max_score = 150
-                        default_val = st.session_state.subject_references.get(subject, 105)
-                    else:  # 物理、政治、历史、地理等
-                        max_score = 100
-                        default_val = st.session_state.subject_references.get(subject, 70)
-                    
-                    score_input = st.number_input(
-                        f"{subject}参考线",
-                        value=default_val,
-                        min_value=0,
-                        max_value=max_score,
-                        step=1,
-                        disabled=st.session_state.analysis_started,
-                        help=f"{subject}科目的分数参考线，满分{max_score}分"
-                    )
-                    # 直接存储分数（内部使用时会转换为百分比）
-                    st.session_state.subject_references[subject] = score_input
-    else:
-        # 如果还没有上传数据，显示常见科目（化学生物合并为选科）
-        st.info("上传成绩数据后，将显示对应科目的参考线设置")
-        common_subjects = ["语文", "数学", "英语", "物理", "选科"]
-        cols = st.columns(3)
-        for idx, subject in enumerate(common_subjects):
-            with cols[idx % 3]:
-                if subject == "选科":
-                    default_val = st.session_state.subject_references.get("选科", 140)
-                    score_input = st.number_input(
-                        "选科参考线",
-                        value=default_val,
-                        min_value=0,
-                        max_value=200,
-                        step=1,
-                        disabled=st.session_state.analysis_started,
-                        help="选科（化学+生物）的总分参考线，满分200分"
-                    )
-                    st.session_state.subject_references["选科"] = score_input
-                else:
-                    # 根据科目确定满分和默认值
-                    if subject in ["语文", "数学", "英语"]:
-                        max_score = 150
-                        default_val = st.session_state.subject_references.get(subject, 105)
-                    else:  # 物理
-                        max_score = 100
-                        default_val = st.session_state.subject_references.get(subject, 70)
-                    
-                    score_input = st.number_input(
-                        f"{subject}参考线",
-                        value=default_val,
-                        min_value=0,
-                        max_value=max_score,
-                        step=1,
-                        disabled=st.session_state.analysis_started,
-                        help=f"{subject}科目的分数参考线，满分{max_score}分"
-                    )
-                    st.session_state.subject_references[subject] = score_input
-    
-    st.markdown("---")
-    
-    # 偏科判定标准
-    st.markdown("**📊 偏科判定标准**")
-    st.caption("基于各科得分率与参考线百分比差值的标准差进行判定")
-    
-    st.markdown("""
-    **判定逻辑：**
-    1. 将各科成绩转换为得分率（百分比）
-    2. 计算各科差值 = 实际得分率 - 参考线百分比
-    3. 计算差值的标准差（反映各科表现的离散程度）
-    4. 根据标准差判定偏科等级
-    
-    **示例：** 标准差越大，说明各科成绩相对参考线的表现越不均衡
-    """)
-    
-    # 偏科阈值设置
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("**轻微偏科**")
-        st.session_state.config_params["轻微偏科_标准差"] = st.number_input(
-            "差值标准差阈值",
-            value=float(st.session_state.config_params.get("轻微偏科_标准差", 7.5)),
-            min_value=0.0,
-            step=0.1,
-            format="%.1f",
-            disabled=st.session_state.analysis_started,
-            help="各科得分率差值标准差 > 此阈值判定为轻微偏科（百分比单位）"
-        )
-    with col2:
-        st.markdown("**明显偏科**")
-        st.session_state.config_params["明显偏科_标准差"] = st.number_input(
-            "差值标准差阈值 ",
-            value=float(st.session_state.config_params.get("明显偏科_标准差", 8.5)),
-            min_value=0.0,
-            step=0.1,
-            format="%.1f",
-            disabled=st.session_state.analysis_started,
-            help="各科得分率差值标准差 > 此阈值判定为明显偏科（百分比单位）"
-        )
-    with col3:
-        st.markdown("**严重偏科**")
-        st.session_state.config_params["严重偏科_标准差"] = st.number_input(
-            "差值标准差阈值  ",
-            value=float(st.session_state.config_params.get("严重偏科_标准差", 10.0)),
-            min_value=0.0,
-            step=0.1,
-            format="%.1f",
-            disabled=st.session_state.analysis_started,
-            help="各科得分率差值标准差 > 此阈值判定为严重偏科（百分比单位）"
-        )
-    
-    # 扣分设置
-    st.markdown("---")
-    st.markdown("**💰 偏科扣分**")
-    col10, col11, col12 = st.columns(3)
-    with col10:
-        st.session_state.config_params["轻微偏科扣分"] = st.number_input("轻微扣分", value=st.session_state.config_params["轻微偏科扣分"], step=1, disabled=st.session_state.analysis_started)
-    with col11:
-        st.session_state.config_params["明显偏科扣分"] = st.number_input("明显扣分", value=st.session_state.config_params["明显偏科扣分"], step=1, disabled=st.session_state.analysis_started)
-    with col12:
-        st.session_state.config_params["严重偏科扣分"] = st.number_input("严重扣分", value=st.session_state.config_params["严重偏科扣分"], step=1, disabled=st.session_state.analysis_started)
+    st.caption(describe_bias_rule())
+    st.caption("使用每场物理类分数线；选科合计线按约定平分给化学、生物。阈值和扣分是可调整的教学规则。这里的分数线与排名过线奖励分别计算。")
+    cols = st.columns(3)
+    for col, level in zip(cols, BIAS_LEVELS):
+        with col:
+            st.markdown(f"**{level}**")
+            threshold_key = level + '_AB档差距'
+            penalty_key = level + '扣分'
+            st.session_state.config_params[threshold_key] = st.number_input(
+                f"{level}差距阈值", value=float(st.session_state.config_params[threshold_key]),
+                min_value=0.1, step=0.1, format="%.1f", key=f'bias_v3_{threshold_key}',
+                disabled=st.session_state.analysis_started,
+                help="1档代表该科A线与B线之间的距离。某科比个人其他五科的中位目标位置低至少此值时，达到本档。")
+            st.session_state.config_params[penalty_key] = st.number_input(
+                f"{level}扣分", value=float(st.session_state.config_params[penalty_key]),
+                min_value=0.0, step=1.0, key=f'bias_v3_{penalty_key}',
+                disabled=st.session_state.analysis_started)
 
 
 def _render_file_upload():
@@ -1376,7 +1223,8 @@ def _render_control_buttons():
             st.session_state.uploader_key += 1  # 增加key值以重置file_uploader
             
             # 清理分析结果缓存
-            for key in ['df_all', 'df_score', 'df_final', 'df_bias', 'has_subjects', 
+            for key in ['_analysis_cache', '_export_cache', '_critical_cache',
+                       'df_all', 'df_score', 'df_final', 'df_bias', 'has_subjects',
                        'rank_cols', 'score_cols', 'group_rank_cols', 'subjects', 'bias_dict', 'exam_labels']:
                 if key in st.session_state:
                     del st.session_state[key]

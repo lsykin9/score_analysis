@@ -198,7 +198,7 @@ class ScoringSchemeTests(unittest.TestCase):
         with patch('streamlit.download_button', side_effect=capture):
             app.run()
         self.assert_app_ok(app)
-        self.assertEqual(len(app.tabs), 6)
+        self.assertEqual(len(app.tabs), 7)
         self.assertTrue(app.radio(key='scoring_scheme_selector').disabled)
         self.assertEqual(next(m for m in app.metric if m.label == '进步人数').value, '0')
         charts = [json.loads(chart.proto.spec) for chart in app.get('plotly_chart')]

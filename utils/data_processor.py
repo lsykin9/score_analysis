@@ -6,6 +6,8 @@ import streamlit as st
 import pandas as pd
 import io
 import os
+import hashlib
+import json
 from utils.progress_rules import (
     TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule, calculate_progress_chain,
     RANK_BASIS, get_rank_basis,
@@ -16,6 +18,9 @@ from utils.rank_history import (
     correct_tied_score_ranks,
 )
 from config.scoring_schemes import GRADE_REWARD_ENABLED, GROUP_REWARD_ENABLED, SCHEME_LABELS
+from config.bias_rules import BIAS_DEFAULTS, normalize_bias_params, validate_bias_params
+from utils.subject_bias import prepare_bias_exams, empty_bias_result
+from utils.exam_template import split_exam_sheet, attach_exam_lines, RESERVED_SHEETS
 from score_analysis_v0_1 import (
     progress_score,
     ranking_bonus,
@@ -30,6 +35,9 @@ from score_analysis_v0_1 import (
 
 def _save_all_input_values():
     """从session_state的临时key中保存所有输入值"""
+    for key in list(st.session_state):
+        if key.startswith('bias_v3_'):
+            st.session_state.config_params[key[len('bias_v3_'):]] = st.session_state[key]
     if 'tie_progress_enabled' in st.session_state:
         st.session_state.config_params[TIE_ENABLED] = st.session_state.tie_progress_enabled
     if 'tie_progress_grade_rank_limit' in st.session_state:
@@ -99,6 +107,37 @@ def _save_all_input_values():
             st.session_state.score_bonuses[idx]["bonus"] = st.session_state[val_key]
 
 
+def _analysis_key(cfg):
+    """只在当前会话复用结果；文件内容、顺序、考试标签和评分参数均参与校验。"""
+    def digest(content):
+        return hashlib.sha256(content).hexdigest() if content is not None else None
+
+    inputs = {
+        'version': 2,
+        'history': digest(st.session_state.history_file_content),
+        'files': [
+            {**{key: file.get(key) for key in ('name', 'exam_num', 'exam_label')},
+             'content': digest(file['content'])}
+            for file in st.session_state.score_files
+        ],
+        'params': cfg,
+        'champion': st.session_state.get('champion_bonus', 200),
+        **{key: st.session_state[key] for key in (
+            'rank_intervals', 'rank_bonuses', 'group_rank_bonuses',
+            'chain_bonuses', 'score_bonuses')},
+    }
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def _merge_scores(left, right):
+    """缺考成绩填0；分数线是考试元数据，不能把外连接空值变成0分线。"""
+    merged = pd.merge(left, right, on='姓名', how='outer', suffixes=('', '_重复'))
+    score_columns = [col for col in merged if 'A线_' not in col and 'B线_' not in col
+                     and not col.startswith('偏科线来源_')]
+    merged[score_columns] = merged[score_columns].fillna(0)
+    return merged
+
+
 def process_data():
     """
     处理上传的文件并进行数据分析
@@ -108,7 +147,14 @@ def process_data():
     _save_all_input_values()
     
     # 从 session state 构建配置
-    cfg = st.session_state.config_params
+    cfg = normalize_bias_params(st.session_state.config_params)
+    validate_bias_params(cfg)
+    st.session_state.config_params = cfg
+
+    cache_key = _analysis_key(cfg)
+    cached = st.session_state.get('_analysis_cache')
+    if cached is not None and cached['key'] == cache_key:
+        return cached['results']
     
     # 直接从动态区间构建weights
     weights = []
@@ -132,13 +178,12 @@ def process_data():
     
     # 偏科扣分参数
     bias_penalty = {
-        "轻微偏科": cfg.get("轻微偏科扣分", 10),
-        "明显偏科": cfg.get("明显偏科扣分", 30),
-        "严重偏科": cfg.get("严重偏科扣分", 60)
+        level: cfg[level + '扣分'] for level in ('轻微偏科', '明显偏科', '重度偏科')
     }
     
     tie_enabled, tie_limit = get_tie_progress_rule(cfg)
     config = {
+        **{key: cfg[key] for key in BIAS_DEFAULTS},
         RANK_BASIS: get_rank_basis(cfg),
         TIE_ENABLED: tie_enabled,
         TIE_RANK_LIMIT: tie_limit,
@@ -153,16 +198,7 @@ def process_data():
         "bonus_line_a": cfg.get("A线过线奖励", cfg.get("过线奖励", 5)),
         "line_b": int(cfg.get("B线（排名）", 500)),
         "bonus_line_b": cfg.get("B线过线奖励", 3),
-        # 偏科判定阈值（新方法：基于差值标准差，百分比单位）
-        "轻微偏科_标准差": cfg.get("轻微偏科_标准差", 5),
-        "明显偏科_标准差": cfg.get("明显偏科_标准差", 10),
-        "严重偏科_标准差": cfg.get("严重偏科_标准差", 15),
-        # 各科成绩参考线（实际分数形式，注意：偏科分析时化学+生物会合并为"选科"）
-        "subject_references": st.session_state.get("subject_references", {
-            "语文": 105, "数学": 105, "英语": 105,
-            "物理": 70, "选科": 140,  # 选科 = 化学 + 生物
-            "政治": 70, "历史": 70, "地理": 70
-        })
+
     }
     
     # 定义科目
@@ -189,7 +225,7 @@ def process_data():
             import re
             
             for sheet_name in sheet_names:
-                if sheet_name in ['成绩总表', '完整总表']:  # 跳过总表工作表
+                if sheet_name in RESERVED_SHEETS:
                     continue
                 
                 # 跳过默认工作表名
@@ -197,7 +233,7 @@ def process_data():
                     st.warning(f"⚠️ 工作表 '{sheet_name}' 使用了默认名称，已跳过。请将工作表重命名为考试名称（如：期中考试、期末考试）")
                     continue
                 
-                df_sheet = pd.read_excel("成绩总表_temp.xlsx", sheet_name=sheet_name)
+                df_sheet, exam_lines = split_exam_sheet(pd.read_excel(excel_file, sheet_name=sheet_name))
                 
                 # 直接使用工作表名称作为考试标识
                 # 为所有列（除了"姓名"）添加考试标识后缀
@@ -212,9 +248,7 @@ def process_data():
                 
                 if rename_dict:
                     df_sheet = df_sheet.rename(columns=rename_dict)
-                if rename_dict:
-                    df_sheet = df_sheet.rename(columns=rename_dict)
-                
+                df_sheet = attach_exam_lines(df_sheet, sheet_name, exam_lines)
                 history_dfs.append((sheet_name, df_sheet))
                 st.success(f"✅ 读取工作表: {sheet_name}")
             
@@ -222,7 +256,7 @@ def process_data():
             if history_dfs:
                 df_all = history_dfs[0][1]
                 for exam_label, df_sheet in history_dfs[1:]:
-                    df_all = pd.merge(df_all, df_sheet, on="姓名", how="outer", suffixes=('', '_重复')).fillna(0)
+                    df_all = _merge_scores(df_all, df_sheet)
                     # 删除重复列
                     duplicate_cols = [col for col in df_all.columns if col.endswith('_重复')]
                     if duplicate_cols:
@@ -235,6 +269,11 @@ def process_data():
                 df_all = pd.read_excel("成绩总表_temp.xlsx", skiprows=1)
             else:
                 df_all = pd.read_excel("成绩总表_temp.xlsx")
+            if '总分' in df_all and '总分年级排名' in df_all:
+                label = sheet_names[0]
+                df_all, exam_lines = split_exam_sheet(df_all)
+                df_all = df_all.rename(columns={col: f'{col}_{label}' for col in df_all if col != '姓名'})
+                df_all = attach_exam_lines(df_all, label, exam_lines)
         
         # 检查历史总表的格式
         rank_cols_history = [col for col in df_all.columns if col.startswith("排名_") or col.startswith("年级排名_")]
@@ -311,42 +350,24 @@ def process_data():
         if rename_dict:
             df_all = df_all.rename(columns=rename_dict)
     
-    if len(st.session_state.score_files) > 0:
-        for idx, file_info in enumerate(st.session_state.score_files):
-            exam_num = file_info['exam_num']
-            exam_label = file_info.get('exam_label', f"第{exam_num}次考试")
-            exam_labels[exam_num] = exam_label
-            
-            # 保存临时文件
-            temp_filename = f"成绩_第{exam_num}次_temp.xlsx"
-            with open(temp_filename, "wb") as f:
-                f.write(file_info['content'])
-            
-            # 读取成绩 - 检查是否有说明行需要跳过
-            df_temp = pd.read_excel(temp_filename, nrows=1)
-            # 如果第一行第一列包含"说明"字样，则跳过第一行
-            if df_temp.iloc[0, 0] and isinstance(df_temp.iloc[0, 0], str) and "说明" in str(df_temp.iloc[0, 0]):
-                df = pd.read_excel(temp_filename, skiprows=1)
-            else:
-                df = pd.read_excel(temp_filename)
-            
-            # 智能处理列名：
-            # - 如果列名以 _ 结尾，说明需要添加考试标识，先去掉 _ 再重命名
-            # - 如果列名不以 _ 结尾，保持原样（如"姓名"）
-            # 这样 Excel 模板可以用 _ 来标记哪些列需要添加考试标识
-            cleaned_columns = []
-            for col in df.columns:
-                if col == '姓名':
-                    cleaned_columns.append(col)
-                elif col.endswith('_'):
-                    # 去掉尾部下划线，后续会添加考试标签
-                    cleaned_columns.append(col.rstrip('_'))
-                else:
-                    cleaned_columns.append(col)
-            
-            df.columns = cleaned_columns
-            all_dfs.append((exam_num, exam_label, df))
-    
+    last_upload_num = st.session_state.history_exam_count
+    for file_info in st.session_state.score_files:
+        with pd.ExcelFile(io.BytesIO(file_info['content'])) as uploaded_book:
+            sheets = [name for name in uploaded_book.sheet_names if name not in RESERVED_SHEETS]
+            if not sheets:
+                raise ValueError('上传文件没有可用的考试工作表，请上传原始成绩总表。')
+            for sheet_name in sheets:
+                raw = pd.read_excel(uploaded_book, sheet_name=sheet_name)
+                if not raw.empty and isinstance(raw.iloc[0, 0], str) and '说明' in raw.iloc[0, 0]:
+                    raw = pd.read_excel(uploaded_book, sheet_name=sheet_name, skiprows=1)
+                df, exam_lines = split_exam_sheet(raw)
+                exam_num = max(file_info['exam_num'], last_upload_num + 1)
+                last_upload_num = exam_num
+                exam_label = (sheet_name if len(sheets) > 1 else
+                              file_info.get('exam_label', f'第{exam_num}次考试'))
+                exam_labels[exam_num] = exam_label
+                all_dfs.append((exam_num, exam_label, df, exam_lines))
+
     # 如果没有历史总表,需要从新文件推断格式
     if df_all is None and len(all_dfs) > 0:
         # 检查第一个文件的格式
@@ -385,13 +406,13 @@ def process_data():
     # 检查所有新文件格式是否一致
     if len(all_dfs) > 0:
         expected_col_count = all_dfs[0][2].shape[1]
-        for exam_num, exam_label, df in all_dfs:
+        for exam_num, exam_label, df, exam_lines in all_dfs:
             if df.shape[1] != expected_col_count:
                 st.error(f"❌ {exam_label} 成绩格式不一致！\\n第1次新增：{expected_col_count}列\\n{exam_label}：{df.shape[1]}列\\n\\n请确保所有成绩使用相同格式")
                 st.stop()
     
     # 合并新上传的成绩到历史总表
-    for exam_num, exam_label, df in all_dfs:
+    for exam_num, exam_label, df, exam_lines in all_dfs:
         # 设置基础列名
         col_count = df.shape[1]
         
@@ -434,7 +455,7 @@ def process_data():
                 rename_dict[f"{subj}年级排名"] = f"{subj}年级排名_{exam_label}"
                 rename_dict[f"{subj}集团排名"] = f"{subj}集团排名_{exam_label}"
         
-        df_renamed = df.rename(columns=rename_dict)
+        df_renamed = attach_exam_lines(df.rename(columns=rename_dict), exam_label, exam_lines)
         
         # 合并数据
         if df_all is None or df_all.empty or len(df_all.columns) == 1:
@@ -453,7 +474,7 @@ def process_data():
                 # 跳过重复的列，不覆盖历史数据
                 df_renamed = df_renamed[[col for col in df_renamed.columns if col not in duplicate_cols or col == "姓名"]]
             
-            df_all = pd.merge(df_all, df_renamed, on="姓名", how="outer", suffixes=('', '_重复')).fillna(0)
+            df_all = _merge_scores(df_all, df_renamed)
             
             # 删除任何带有"_重复"后缀的列
             duplicate_cols_after = [col for col in df_all.columns if col.endswith('_重复')]
@@ -506,20 +527,17 @@ def process_data():
         if col.startswith("总分_") and "年级排名" not in col and "集团排名" not in col:
             score_cols.append(col)
     
-    # 如果有科目成绩，需要计算偏科扣分
+    # 只使用最新同一场考试的各科成绩，不从历史考试补齐本次缺少的科目。
     bias_dict = {}
+    latest_exam_label = get_exam_label(progress_rank_cols[-1]) if progress_rank_cols else ''
+    subject_cols_dict = {}
     if has_subjects:
-        subject_cols_dict = {}
-        for subj in subjects:
-            # 查找该科目的分数列（排除年级排名和集团排名列）
-            subj_score_cols = [col for col in df_all.columns 
-                              if col.startswith(f"{subj}_") 
-                              and "年级排名" not in col 
-                              and "集团排名" not in col]
-            if subj_score_cols:
-                subject_cols_dict[subj] = subj_score_cols[-1]
-    
-    
+        subject_cols_dict = {subject: f'{subject}_{latest_exam_label}' for subject in subjects
+                             if f'{subject}_{latest_exam_label}' in df_all.columns}
+        labels = list(dict.fromkeys(get_exam_label(col) for col in progress_rank_cols))
+        config['bias_exams'] = prepare_bias_exams(df_all, labels, subjects)
+        config['bias_exam_label'] = latest_exam_label
+
     comparison_results = []
     for idx, row in df_all.iterrows():
         name = row["姓名"]
@@ -626,59 +644,16 @@ def process_data():
         # 偏科扣分 - 缺考时不扣分
         bias_deduct = 0
         bias_level = "均衡发展"
-        if not is_absent and has_subjects:
-            # 构建各科分数字典
-            latest_scores = {"_name": name}
-            for subj, col in subject_cols_dict.items():
-                latest_scores[subj] = row[col]
-            
-            # 构建各科排名字典（查找最新一次考试的年级排名）
-            subject_ranks = {}
-            for subj in subjects:
-                # 查找该科目的所有年级排名列
-                # 新格式：语文年级排名_考试1 或 旧格式：语文_年级排名_考试1
-                subj_rank_cols = [col for col in df_all.columns 
-                                 if col.startswith(f"{subj}年级排名_") 
-                                 or col.startswith(f"{subj}_年级排名_")]
-                if subj_rank_cols:
-                    # 取最后一次（最新）的排名
-                    latest_rank_col = subj_rank_cols[-1]
-                    rank_val = row[latest_rank_col]
-                    if pd.notna(rank_val) and rank_val > 0:
-                        subject_ranks[subj] = int(rank_val)
-            
-            # 调用偏科检测（传入成绩、排名和配置）
-            bias_info = detect_subject_bias(latest_scores, subjects, subject_ranks, config)
-            bias_level = bias_info["偏科等级"]
-            bias_deduct = bias_penalty_score(bias_level, config)
-            
+        if has_subjects:
+            bias_info = detect_subject_bias(row, subjects, config=config)
+            if is_absent:
+                bias_info['偏科等级'] = '缺考'
+                bias_info['本次偏科等级'] = '缺考'
+                bias_info['判定说明'] = '本次缺考，不扣偏科分；历史诊断仅供查看。'
+            bias_level = bias_info['偏科等级']
+            bias_deduct = 0 if is_absent else bias_penalty_score(bias_level, config)
             bias_dict[name] = bias_info
-        elif is_absent:
-            # 缺考时标记为"缺考"，并设置完整的字段
-            bias_level = "缺考"
-            if name not in bias_dict:
-                bias_dict[name] = {
-                    "偏科等级": "缺考",
-                    "最强科目": "-",
-                    "最弱科目": "-",
-                    "差值标准差": 0,
-                    "平均差值": 0,
-                    "最强科差值": 0,
-                    "最弱科差值": 0
-                }
-        else:
-            # 其他情况（没有科目成绩或数据不完整）
-            if has_subjects and name not in bias_dict:
-                bias_dict[name] = {
-                    "偏科等级": "数据不足",
-                    "最强科目": "-",
-                    "最弱科目": "-",
-                    "差值标准差": 0,
-                    "平均差值": 0,
-                    "最强科差值": 0,
-                    "最弱科差值": 0
-                }
-        
+
         # 总得分
         total = chain_progress + rank_add + line_add + group_rank_add + chain_add + score_add + champion_add + bias_deduct
 
@@ -704,6 +679,12 @@ def process_data():
         ])
     
     df_score = pd.concat([df_score, pd.DataFrame(comparison_results)], axis=1)
+    if has_subjects:
+        for field in ('偏科等级', '本次偏科等级', '持续偏科等级', '持续偏科指数'):
+            df_score[field] = df_score['姓名'].map(lambda name: bias_dict[name][field])
+        df_score['偏科指数'] = df_score['姓名'].map(lambda name: bias_dict[name]['偏科指数'])
+        df_score['持续薄弱科目'] = df_score['姓名'].map(lambda name: '、'.join(bias_dict[name]['持续薄弱科目']) or '-')
+        df_score['薄弱科目'] = df_score['姓名'].map(lambda name: '、'.join(bias_dict[name]['薄弱科目']) or '-')
     df_final = pd.merge(df_all, df_score, on="姓名")
     df_final = df_final.sort_values(by="总得分", ascending=False)
     
@@ -713,7 +694,7 @@ def process_data():
         bias_results = []
         for name, bias_info in bias_dict.items():
             # 检查bias_info是否完整
-            required_keys = ["偏科等级", "最强科目", "最弱科目", "差值标准差", "平均差值", "最强科差值", "最弱科差值"]
+            required_keys = ["偏科等级", "最强科目", "最弱科目", "偏科指数", "薄弱科目", "学科明细"]
             missing_keys = [key for key in required_keys if key not in bias_info]
             
             if missing_keys:
@@ -724,17 +705,21 @@ def process_data():
             penalty = bias_penalty_score(bias_info["偏科等级"], config)
             bias_results.append({
                 "姓名": name,
-                "差值标准差": bias_info.get("差值标准差", 0),
-                "平均差值": bias_info.get("平均差值", 0),
-                "偏科等级": bias_info["偏科等级"],
-                "最强科目": bias_info["最强科目"],
-                "最强科差值": bias_info.get("最强科差值", 0),
-                "最弱科目": bias_info["最弱科目"],
-                "最弱科差值": bias_info.get("最弱科差值", 0),
-                "扣分": penalty
+                "偏科等级": bias_info['偏科等级'],
+                "本次偏科等级": bias_info['本次偏科等级'],
+                "持续偏科等级": bias_info['持续偏科等级'],
+                "持续偏科指数": bias_info['持续偏科指数'],
+                "持续薄弱科目": '、'.join(bias_info['持续薄弱科目']) or '-',
+                "分析考试": bias_info['分析考试'],
+                "偏科指数": bias_info['偏科指数'],
+                "薄弱科目": '、'.join(bias_info['薄弱科目']) or '-',
+                "最强科目": bias_info['最强科目'],
+                "最弱科目": bias_info['最弱科目'],
+                "判定说明": bias_info['判定说明'],
+                "扣分": penalty,
             })
         df_bias = pd.DataFrame(bias_results)
-        df_bias = df_bias.sort_values(by="差值标准差", ascending=False)
+        df_bias = df_bias.sort_values(by="偏科指数", ascending=False, na_position="last")
     
     # 清理临时文件（在数据处理完成后）
     import glob
@@ -746,4 +731,7 @@ def process_data():
         except:
             pass  # 忽略删除失败的情况
     
-    return df_all, df_score, df_final, df_bias, has_subjects, rank_cols, score_cols, subjects, bias_dict, exam_labels
+    result = (df_all, df_score, df_final, df_bias, has_subjects, rank_cols,
+              score_cols, subjects, bias_dict, exam_labels)
+    st.session_state['_analysis_cache'] = {'key': cache_key, 'results': result}
+    return result

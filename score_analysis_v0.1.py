@@ -67,15 +67,14 @@ def read_config(path="参数配置.xlsx", config_dict=None):
             threshold = int(re.findall(r"\d+", k)[0])
             score_bonus[threshold] = v
 
-    # 偏科扣分参数
-    bias_penalty = {
-        "轻微偏科": cfg.get("轻微偏科扣分", 10),
-        "明显偏科": cfg.get("明显偏科扣分", 30),
-        "严重偏科": cfg.get("严重偏科扣分", 60)
-    }
+    from config.bias_rules import BIAS_DEFAULTS, normalize_bias_params
+    cfg = normalize_bias_params(cfg)
+    bias_penalty = {level: cfg[level + '扣分']
+                    for level in ('轻微偏科', '明显偏科', '重度偏科')}
 
     tie_enabled, tie_limit = get_tie_progress_rule(cfg)
     return {
+        **{key: cfg[key] for key in BIAS_DEFAULTS},
         RANK_BASIS: get_rank_basis(cfg),
         TIE_ENABLED: tie_enabled,
         TIE_RANK_LIMIT: tie_limit,
@@ -199,214 +198,12 @@ def total_score_bonus(total_score, config):
             bonus = b
     return bonus
 
-# === 偏科检测（基于排名的混合法） ===
+# === 偏科检测：与网页共用 A/B 目标线及历史持续性算法 ===
 def detect_subject_bias(row, subjects, subject_ranks=None, config=None):
-    """
-    检测学生是否偏科（新方法：基于成绩百分比与参考线百分比差值的标准差）
-    注意：化学和生物会合并为"选科"进行分析
-    
-    参数:
-        row: 学生成绩数据行（包含各科分数）
-        subjects: 科目列表
-        subject_ranks: 各科排名字典 {科目: 排名}（用于辅助信息，非主要判定依据）
-        config: 配置参数（包含偏科判定阈值和各科参考线分数）
-    
-    返回:
-        dict: 包含偏科等级、最强科目、最弱科目、差值标准差等信息
-    """
-    if not config:
-        return {
-            "偏科等级": "配置错误",
-            "最强科目": "-",
-            "最弱科目": "-",
-            "差值标准差": 0,
-            "平均差值": 0,
-            "最强科差值": 0,
-            "最弱科差值": 0
-        }
-    
-    # 获取各科参考线（分数形式）
-    subject_references = config.get("subject_references", {})
-    
-    # 定义各科满分
-    subject_max_scores = {
-        "语文": 150,
-        "数学": 150,
-        "英语": 150,
-        "物理": 100,
-        "选科": 200,  # 化学100 + 生物100
-        "政治": 100,
-        "历史": 100,
-        "地理": 100
-    }
-    
-    # 处理科目列表：将化学和生物合并为选科
-    analysis_subjects = []
-    has_chem = "化学" in subjects
-    has_bio = "生物" in subjects
-    
-    for subj in subjects:
-        if subj not in ["化学", "生物"]:
-            analysis_subjects.append(subj)
-    
-    # 如果有化学或生物，添加"选科"
-    if has_chem or has_bio:
-        analysis_subjects.append("选科")
-    
-    # 计算各科差值（成绩百分比 - 参考线百分比）
-    differences = []
-    diff_dict = {}
-    
-    for subj in analysis_subjects:
-        if subj == "选科":
-            # 计算选科成绩 = 化学 + 生物
-            chem_score = row.get("化学", 0) if has_chem else 0
-            bio_score = row.get("生物", 0) if has_bio else 0
-            
-            # 如果化学或生物有一科缺考（0或NaN），则选科也算缺考
-            if (has_chem and (pd.isna(chem_score) or chem_score <= 0)) or \
-               (has_bio and (pd.isna(bio_score) or bio_score <= 0)):
-                continue
-            
-            total_score = chem_score + bio_score
-            max_score = subject_max_scores.get("选科", 200)
-            score_percentage = (total_score / max_score) * 100  # 转换为百分比
-            
-            # 将参考线分数转换为百分比
-            reference_score = subject_references.get("选科", 140)
-            reference_percentage = (reference_score / max_score) * 100
-            
-            diff = score_percentage - reference_percentage
-            differences.append(diff)
-            diff_dict["选科"] = diff
-        else:
-            # 其他科目正常处理
-            score = row.get(subj, 0)
-            if pd.isna(score) or score <= 0:
-                continue  # 跳过缺考或无效成绩
-            
-            max_score = subject_max_scores.get(subj, 150)
-            score_percentage = (score / max_score) * 100  # 转换为百分比
-            
-            # 将参考线分数转换为百分比
-            reference_score = subject_references.get(subj, 70 if max_score == 100 else 105)
-            reference_percentage = (reference_score / max_score) * 100
-            
-            diff = score_percentage - reference_percentage
-            differences.append(diff)
-            diff_dict[subj] = diff
-    
-    # 如果没有足够的有效数据
-    if len(differences) < 2:
-        return {
-            "偏科等级": "数据不足",
-            "最强科目": "-",
-            "最弱科目": "-",
-            "差值标准差": 0,
-            "平均差值": 0,
-            "最强科差值": 0,
-            "最弱科差值": 0
-        }
-    
-    # 计算统计指标
-    diff_array = np.array(differences)
-    mean_diff = np.mean(diff_array)  # 平均差值（反映整体水平）
-    std_diff = np.std(diff_array, ddof=1) if len(differences) > 1 else 0  # 标准差（反映离散程度）
-    max_diff = np.max(diff_array)  # 最大差值
-    min_diff = np.min(diff_array)  # 最小差值
-    
-    # 找到最强和最弱科目
-    best_subject = max(diff_dict, key=diff_dict.get) if diff_dict else "-"
-    worst_subject = min(diff_dict, key=diff_dict.get) if diff_dict else "-"
-    best_diff = diff_dict.get(best_subject, 0)
-    worst_diff = diff_dict.get(worst_subject, 0)
-    
-    # 判定偏科等级（基于标准差）
-    bias_level = "均衡发展"
-    
-    severe_std = config.get("严重偏科_标准差", 15)
-    obvious_std = config.get("明显偏科_标准差", 10)
-    mild_std = config.get("轻微偏科_标准差", 5)
-    
-    if std_diff >= severe_std:
-        bias_level = "严重偏科"
-    elif std_diff >= obvious_std:
-        bias_level = "明显偏科"
-    elif std_diff >= mild_std:
-        bias_level = "轻微偏科"
-    
-    return {
-        "偏科等级": bias_level,
-        "最强科目": best_subject,
-        "最弱科目": worst_subject,
-        "差值标准差": round(std_diff, 2),
-        "平均差值": round(mean_diff, 2),
-        "最强科差值": round(best_diff, 2),
-        "最弱科差值": round(worst_diff, 2),
-        "各科差值": diff_dict
-    }
+    # 排名参数保留接口兼容；判定使用各场学科成绩及 A/B 分数线。
+    from utils.subject_bias import detect_relative_bias
+    return detect_relative_bias(row, subjects, config)
 
-
-# === 旧的基于分数的偏科检测（备用） ===
-def _detect_subject_bias_by_score(row, subjects):
-    """
-    基于分数的偏科检测（旧方法，作为备用）
-    """
-    # 定义各科满分
-    full_scores = {
-        "语文": 150, "数学": 150, "英语": 150,
-        "物理": 100, "化学": 100, "生物": 100
-    }
-    
-    # 提取各科成绩并标准化为百分制
-    normalized_scores = []
-    subject_scores = {}
-    
-    for subj in subjects:
-        score = row.get(subj, 0)
-        if score > 0:  # 只处理有效成绩
-            full_score = full_scores.get(subj, 100)
-            normalized = (score / full_score) * 100
-            normalized_scores.append(normalized)
-            subject_scores[subj] = {
-                "原始分": score,
-                "标准化分": round(normalized, 2)
-            }
-    
-    # 如果没有有效成绩，返回空结果
-    if len(normalized_scores) < 2:
-        return {
-            "偏科等级": "数据不足",
-            "最强科目": "-",
-            "最弱科目": "-"
-        }
-    
-    # 计算标准差
-    std_dev = np.std(normalized_scores, ddof=1)  # 使用样本标准差
-    mean_score = np.mean(normalized_scores)
-    
-    # 判定偏科等级（简单判定）
-    if std_dev < 10:
-        bias_level = "均衡发展"
-    elif std_dev < 15:
-        bias_level = "轻微偏科"
-    elif std_dev < 20:
-        bias_level = "明显偏科"
-    else:
-        bias_level = "严重偏科"
-    
-    # 找出最强和最弱科目
-    max_subj = max(subject_scores.items(), key=lambda x: x[1]["标准化分"])
-    min_subj = min(subject_scores.items(), key=lambda x: x[1]["标准化分"])
-    
-    return {
-        "偏科等级": bias_level,
-        "最强科目": f"{max_subj[0]}({max_subj[1]['标准化分']}%)",
-        "最弱科目": f"{min_subj[0]}({min_subj[1]['标准化分']}%)",
-        "标准差": round(std_dev, 2),
-        "平均标准化分": round(mean_score, 2),
-        "科目详情": subject_scores
-    }
 
 # === 偏科扣分 ===
 def bias_penalty_score(bias_level, config):
@@ -414,17 +211,18 @@ def bias_penalty_score(bias_level, config):
     根据偏科等级计算扣分
     
     参数:
-        bias_level: 偏科等级（均衡发展/轻微偏科/明显偏科/严重偏科）
+        bias_level: 偏科等级（均衡发展/轻微偏科/明显偏科/重度偏科）
         config: 配置参数
     
     返回:
         float: 扣分值（负数）
     """
-    if bias_level == "均衡发展" or bias_level == "数据不足":
+    if bias_level in ("均衡发展", "未达偏科阈值", "数据不足", "缺考", "待观察"):
         return 0
     
-    penalty = config["bias_penalty"].get(bias_level, 0)
-    return -penalty  # 返回负数表示扣分
+    penalties = config["bias_penalty"]
+    penalty = penalties.get(bias_level, penalties.get("严重偏科", 0) if bias_level == "重度偏科" else 0)
+    return -max(0, float(penalty))  # 返回负数表示扣分
 
 
 
@@ -460,6 +258,8 @@ def main():
         has_subjects = True
     else:
         raise ValueError(f"最新成绩.xlsx格式错误！当前列数：{col_count}\n支持格式：\n- 2列（姓名、排名）\n- 3列（姓名、排名、总分）\n- 9列（姓名、排名、总分、语文、数学、英语、物理、化学、生物）")
+
+    # 无同场 A/B 分数线的旧命令行输入，仅显示数据不足，不回退班级均分算法。
 
     if os.path.exists("成绩总表.xlsx"):
         df_all = pd.read_excel("成绩总表.xlsx")
@@ -559,7 +359,7 @@ def main():
                 latest_scores[subj] = row[col]
             
             # 检测偏科
-            bias_info = detect_subject_bias(latest_scores, subjects)
+            bias_info = detect_subject_bias(latest_scores, subjects, config=config)
             bias_level = bias_info["偏科等级"]
             bias_deduct = bias_penalty_score(bias_level, config)
             
@@ -609,16 +409,16 @@ def main():
             
             bias_results.append({
                 "姓名": name,
-                "标准差": bias_info["标准差"],
+                "偏科指数": bias_info["偏科指数"],
                 "偏科等级": bias_info["偏科等级"],
-                "平均标准化分": bias_info["平均标准化分"],
+                "薄弱科目": "、".join(bias_info["薄弱科目"]),
                 "最强科目": bias_info["最强科目"],
                 "最弱科目": bias_info["最弱科目"],
                 "扣分": penalty
             })
         
         df_bias = pd.DataFrame(bias_results)
-        df_bias = df_bias.sort_values(by="标准差", ascending=False)
+        df_bias = df_bias.sort_values(by="偏科指数", ascending=False)
         df_bias.to_excel("偏科检测报告.xlsx", index=False)
         print("✅ 已生成偏科检测报告.xlsx")
         
