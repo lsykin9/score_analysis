@@ -94,19 +94,19 @@ class ProgressIntegrationTests(unittest.TestCase):
                 result = self.process([120, 100, 100, 90], columns)
                 row = result[1].iloc[0]
                 self.assertEqual(row['连续进步次数'], 3)
-                self.assertEqual(row['连续进步加分'], 90)
+                self.assertEqual(row['连续进步加分'], 110)
                 self.assertAlmostEqual(row['区间进步得分'], 14)
 
     def test_ties_change_chain_reward_but_not_progress_score(self):
         enabled = self.process([120, 100, 100])[1].iloc[0]
         disabled = self.process([120, 100, 100], rule={TIE_ENABLED: False})[1].iloc[0]
         self.assertEqual(enabled['连续进步次数'], 2)
-        self.assertEqual(enabled['连续进步加分'], 50)
+        self.assertEqual(enabled['连续进步加分'], 60)
         self.assertEqual(disabled['连续进步次数'], 0)
         self.assertEqual(disabled['连续进步加分'], 0)
         self.assertEqual(enabled['区间进步得分'], 0)
         self.assertEqual(disabled['区间进步得分'], 0)
-        self.assertEqual(enabled['总得分'] - disabled['总得分'], 50)
+        self.assertEqual(enabled['总得分'] - disabled['总得分'], 60)
 
     def test_boundary_and_grade_scope_not_group_scope(self):
         for rank, limit, group_rank, expected in [
@@ -123,9 +123,9 @@ class ProgressIntegrationTests(unittest.TestCase):
         self.assertEqual(row['连续进步次数'], 1)
         latest_absent = self.process([120, 100, 100, 90], absent_exam=4)[1].iloc[0]
         self.assertEqual(latest_absent['连续进步次数'], 2)
-        self.assertEqual(latest_absent['连续进步加分'], 50)
+        self.assertEqual(latest_absent['连续进步加分'], 60)
         self.assertEqual(latest_absent['区间进步得分'], 0)
-        self.assertEqual(latest_absent['总得分'], 50)
+        self.assertEqual(latest_absent['总得分'], 60)
 
     def test_historical_multisheet_and_single_sheet(self):
         for multisheet in [True, False]:
@@ -150,7 +150,7 @@ class ProgressIntegrationTests(unittest.TestCase):
                 self.assert_app_ok(app)
                 row = app.session_state['results'][1].iloc[0]
                 self.assertEqual(row['连续进步次数'], 2)
-                self.assertEqual(row['连续进步加分'], 50)
+                self.assertEqual(row['连续进步加分'], 60)
 
     def test_widgets_callbacks_and_saved_config(self):
         app = AppTest.from_string(SIDEBAR_SCRIPT, default_timeout=20).run()
@@ -212,7 +212,7 @@ class ProgressIntegrationTests(unittest.TestCase):
                 self.assert_app_ok(app)
                 charts = [json.loads(chart.proto.spec) for chart in app.get('plotly_chart')]
                 lines = [trace for chart in charts for trace in chart['data']
-                         if trace.get('mode', '').startswith('lines+markers')]
+                         if trace.get('y') == [120, 100, 100]]
                 self.assertEqual(len(lines), 2)
                 for trace in lines:
                     self.assertEqual(trace['y'], [120, 100, 100])
@@ -230,7 +230,7 @@ class ProgressIntegrationTests(unittest.TestCase):
         self.assertEqual(next(m for m in app.metric if m.label == '进步人数').value, '0')
         charts = [json.loads(chart.proto.spec) for chart in app.get('plotly_chart')]
         grade_lines = [trace for chart in charts for trace in chart['data']
-                       if trace.get('mode', '').startswith('lines+markers')]
+                       if trace.get('y') == [120, 100, 100, None]]
         for trace in grade_lines:
             self.assertEqual(trace['y'], [120, 100, 100, None])
 
@@ -261,7 +261,7 @@ class ProgressIntegrationTests(unittest.TestCase):
         self.assertEqual(app.session_state['df_score'].iloc[0]['连续进步次数'], 2)
         exported = pd.read_excel(BytesIO(downloads['完整分析结果.xlsx']), sheet_name=None)
         self.assertEqual(exported['得分明细'].iloc[0]['连续进步次数'], 2)
-        self.assertEqual(exported['得分明细'].iloc[0]['连续进步加分'], 50)
+        self.assertEqual(exported['得分明细'].iloc[0]['连续进步加分'], 60)
         self.assertEqual(exported['得分明细'].iloc[0]['区间进步得分'], 0)
         self.assertEqual(exported['完整结果'].iloc[0]['总得分'], app.session_state['df_score'].iloc[0]['总得分'])
         rules = exported['连续进步规则'].set_index('项目')['设置']

@@ -96,9 +96,9 @@ class TiedRankIntegrationTests(unittest.TestCase):
                     self.assertEqual(all_data[f'总分集团排名_月考{index}'].tolist(), [201, 199])
                 self.assertEqual(scores['连续进步次数'].tolist(), [1, 1])
                 self.assertEqual(scores['区间进步得分'].tolist(), [0, 0])
-                self.assertEqual(scores['年级排名加分'].tolist(), [50, 50])
+                self.assertEqual(scores['年级排名加分'].tolist(), [120, 120])
                 self.assertEqual(scores['A/B线奖励'].tolist(), [100, 100])
-                self.assertEqual(scores['集团排名加分'].tolist(), [0, 50])
+                self.assertEqual(scores['集团排名加分'].tolist(), [60, 90])
                 self.assertEqual(final['总分年级排名_月考2'].tolist(), [13, 13])
 
 

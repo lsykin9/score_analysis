@@ -54,8 +54,8 @@ class SubjectBiasTests(unittest.TestCase):
         cfg = known_config()
         cfg['bias_penalty'] = {level: cfg[level + '扣分']
                                for level in ['轻微偏科', '明显偏科', '重度偏科']}
-        for english, label, penalty in [(71, BIAS_BALANCED, 0), (70, '轻微偏科', -10),
-                                        (65, '明显偏科', -25), (60, '重度偏科', -45)]:
+        for english, label, penalty in [(72, BIAS_BALANCED, 0), (71, '轻微偏科', -20),
+                                        (66, '明显偏科', -50), (61, '重度偏科', -100)]:
             with self.subTest(english=english):
                 result = detect_subject_bias({**dict.fromkeys(SUBJECTS, 75), '英语': english}, SUBJECTS, config=cfg)
                 self.assertEqual(result['偏科等级'], label)
@@ -131,7 +131,7 @@ class SubjectBiasIntegrationTests(unittest.TestCase):
                     row = app.session_state['results'][1].set_index('姓名').loc['学生11']
                     self.assertEqual(row['偏科等级'], '重度偏科')
                     self.assertEqual(row['薄弱科目'], '英语')
-                    self.assertEqual(row['偏科扣分'], -45)
+                    self.assertEqual(row['偏科扣分'], -100)
                     parts = ['区间进步得分', '连续进步加分', '年级排名加分', 'A/B线奖励',
                              '集团排名加分', '总分奖励', '东校状元奖', '偏科扣分']
                     self.assertAlmostEqual(row['总得分'], sum(row[col] for col in parts))
@@ -171,7 +171,7 @@ class SubjectBiasIntegrationTests(unittest.TestCase):
             self.assertEqual(book[sheet].set_index('姓名').loc['学生11', '偏科等级'], '重度偏科')
         details = book['偏科学科明细']
         self.assertEqual(len(details[details['姓名'] == '学生11']), 6)
-        self.assertEqual(book['偏科规则'].set_index('项目').loc['重度偏科扣分', '设置'], 45)
+        self.assertEqual(book['偏科规则'].set_index('项目').loc['重度偏科扣分', '设置'], 100)
         again = AppTest.from_string(fixtures.PROCESS_SCRIPT, default_timeout=20)
         again.session_state['history_file_content'] = downloads['成绩总表.xlsx']
         again.run()

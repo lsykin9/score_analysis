@@ -113,7 +113,7 @@ def _analysis_key(cfg):
         return hashlib.sha256(content).hexdigest() if content is not None else None
 
     inputs = {
-        'version': 2,
+        'version': 3,
         'history': digest(st.session_state.history_file_content),
         'files': [
             {**{key: file.get(key) for key in ('name', 'exam_num', 'exam_label')},
@@ -610,10 +610,10 @@ def process_data():
                     break
             rank_add = ranking_bonus(latest_rank, previous_rank, config)
 
-        # A/B 线奖励始终按年级排名独立计算，不受两个排名奖励开关影响。
+        # A/B 线奖励按当前选定的排名方案独立计算，不受排名奖励开关影响。
         line_add = 0
-        if not is_absent and grade_ranks:
-            line_add = line_bonus_score(grade_ranks[-1], config)
+        if not is_absent and ranks:
+            line_add = line_bonus_score(ranks[-1], config)
         
         # 集团排名加分 - 缺考时不加分
         group_rank_add = 0

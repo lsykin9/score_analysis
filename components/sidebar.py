@@ -20,6 +20,7 @@ from utils.progress_rules import (
 from config.scoring_schemes import (
     SCHEME_LABELS, GRADE_REWARD_ENABLED, GROUP_REWARD_ENABLED,
     capture_active_profile, activate_scheme, restore_scheme_profiles, default_profile,
+    RANK_BONUSES, GROUP_RANK_BONUSES, CHAIN_BONUSES,
 )
 
 # 配置文件路径（作为备用）
@@ -30,7 +31,7 @@ def _apply_config_params(params):
     """补全新规则并同步控件，避免加载配置后旧控件值覆盖新值。"""
     params = normalize_bias_params(params)
     for key in list(st.session_state):
-        if key.startswith(('bias_v2_', 'bias_v3_')):
+        if key.startswith(('bias_v2_', 'bias_v3_', 'bias_v4_')):
             del st.session_state[key]
     enabled, limit = get_tie_progress_rule(params)
     params[TIE_ENABLED] = enabled
@@ -264,30 +265,20 @@ def _reset_to_default():
     st.session_state.next_interval_id = 8
     
     st.session_state.rank_bonuses = [
-        {"id": 0, "threshold": 5, "bonus": 100},
-        {"id": 1, "threshold": 10, "bonus": 70},
-        {"id": 2, "threshold": 20, "bonus": 50},
-        {"id": 3, "threshold": 30, "bonus": 35},
-        {"id": 4, "threshold": 50, "bonus": 20},
-        {"id": 5, "threshold": 100, "bonus": 10}
+        {"id": index, "threshold": threshold, "bonus": bonus}
+        for index, (threshold, bonus) in enumerate(RANK_BONUSES)
     ]
-    st.session_state.next_bonus_id = 6
+    st.session_state.next_bonus_id = len(st.session_state.rank_bonuses)
     
     st.session_state.group_rank_bonuses = [
-        {"id": 0, "threshold": 20, "bonus": 200},
-        {"id": 1, "threshold": 50, "bonus": 150},
-        {"id": 2, "threshold": 100, "bonus": 100},
-        {"id": 3, "threshold": 150, "bonus": 75},
-        {"id": 4, "threshold": 200, "bonus": 50}
+        {"id": index, "threshold": threshold, "bonus": bonus}
+        for index, (threshold, bonus) in enumerate(GROUP_RANK_BONUSES)
     ]
-    st.session_state.next_group_bonus_id = 5
+    st.session_state.next_group_bonus_id = len(st.session_state.group_rank_bonuses)
     
     st.session_state.chain_bonuses = [
-        {"id": 0, "times": 1, "bonus": 20},
-        {"id": 1, "times": 2, "bonus": 50},
-        {"id": 2, "times": 3, "bonus": 90},
-        {"id": 3, "times": 4, "bonus": 140},
-        {"id": 4, "times": 5, "bonus": 200}
+        {"id": index, "times": times, "bonus": bonus}
+        for index, (times, bonus) in enumerate(CHAIN_BONUSES)
     ]
     st.session_state.next_chain_bonus_id = 5
     
@@ -305,16 +296,16 @@ def _reset_to_default():
     st.session_state.next_score_bonus_id = 9
     
     st.session_state.bias_penalties = [
-        {"id": 0, "level": "轻微", "penalty": 10},
-        {"id": 1, "level": "明显", "penalty": 25},
-        {"id": 2, "level": "重度", "penalty": 45}
+        {"id": 0, "level": "轻微", "penalty": 20},
+        {"id": 1, "level": "明显", "penalty": 50},
+        {"id": 2, "level": "重度", "penalty": 100}
     ]
     
     st.session_state.config_params = {
         "A线（排名）": 80,
         "A线过线奖励": 100,
         "B线（排名）": 430,
-        "B线过线奖励": 0,
+        "B线过线奖励": 20,
         **BIAS_DEFAULTS,
     }
     _apply_config_params(st.session_state.config_params)
@@ -591,9 +582,10 @@ def _render_interval_settings():
 
 def _render_line_and_bonus_settings():
     """渲染排名线和过线奖励设置"""
+    basis_label = rank_basis_label(st.session_state.config_params)
     st.markdown("---")
-    st.subheader("年级排名线和过线奖励")
-    st.caption("A/B 线奖励独立计算，始终按年级排名判断。")
+    st.subheader(f"{basis_label}排名线和过线奖励")
+    st.caption(f"A/B 线奖励独立计算，按当前方案的总分{basis_label}排名判断。")
     
     # 确保 config_params 中有这些 key 的值，并复制到顶层 session_state
     if 'line_a_rank' not in st.session_state:
@@ -610,7 +602,7 @@ def _render_line_and_bonus_settings():
     col1, col2 = st.columns(2)
     with col1:
         st.number_input(
-            "A线排名", 
+            f"{basis_label}A线排名",
             step=1, 
             min_value=1,
             disabled=st.session_state.analysis_started,
@@ -630,7 +622,7 @@ def _render_line_and_bonus_settings():
     col3, col4 = st.columns(2)
     with col3:
         st.number_input(
-            "B线排名", 
+            f"{basis_label}B线排名",
             step=1, 
             min_value=1,
             disabled=st.session_state.analysis_started,

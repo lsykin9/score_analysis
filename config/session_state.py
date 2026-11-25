@@ -4,7 +4,9 @@ Session State 初始化模块
 """
 import streamlit as st
 from utils.progress_rules import TIE_ENABLED, TIE_RANK_LIMIT, get_tie_progress_rule
-from config.scoring_schemes import initialize_scheme_state
+from config.scoring_schemes import (
+    initialize_scheme_state, RANK_BONUSES, GROUP_RANK_BONUSES, CHAIN_BONUSES,
+)
 from config.bias_rules import BIAS_DEFAULTS, normalize_bias_params
 
 
@@ -58,34 +60,24 @@ def initialize_session_state():
     # 动态年级排名奖励列表
     if 'rank_bonuses' not in st.session_state:
         st.session_state.rank_bonuses = [
-            {"id": 0, "threshold": 5, "bonus": 100},
-            {"id": 1, "threshold": 10, "bonus": 70},
-            {"id": 2, "threshold": 20, "bonus": 50},
-            {"id": 3, "threshold": 30, "bonus": 35},
-            {"id": 4, "threshold": 50, "bonus": 20},
-            {"id": 5, "threshold": 100, "bonus": 10}
+            {"id": index, "threshold": threshold, "bonus": bonus}
+            for index, (threshold, bonus) in enumerate(RANK_BONUSES)
         ]
-        st.session_state.next_bonus_id = 6
+        st.session_state.next_bonus_id = len(st.session_state.rank_bonuses)
 
     # 动态集团排名奖励列表
     if 'group_rank_bonuses' not in st.session_state:
         st.session_state.group_rank_bonuses = [
-            {"id": 0, "threshold": 20, "bonus": 200},
-            {"id": 1, "threshold": 50, "bonus": 150},
-            {"id": 2, "threshold": 100, "bonus": 100},
-            {"id": 3, "threshold": 150, "bonus": 75},
-            {"id": 4, "threshold": 200, "bonus": 50}
+            {"id": index, "threshold": threshold, "bonus": bonus}
+            for index, (threshold, bonus) in enumerate(GROUP_RANK_BONUSES)
         ]
-        st.session_state.next_group_bonus_id = 5
+        st.session_state.next_group_bonus_id = len(st.session_state.group_rank_bonuses)
 
     # 动态连续进步奖励列表
     if 'chain_bonuses' not in st.session_state:
         st.session_state.chain_bonuses = [
-            {"id": 0, "times": 1, "bonus": 20},
-            {"id": 1, "times": 2, "bonus": 50},
-            {"id": 2, "times": 3, "bonus": 90},
-            {"id": 3, "times": 4, "bonus": 140},
-            {"id": 4, "times": 5, "bonus": 200}
+            {"id": index, "times": times, "bonus": bonus}
+            for index, (times, bonus) in enumerate(CHAIN_BONUSES)
         ]
         st.session_state.next_chain_bonus_id = 5
 
@@ -107,9 +99,9 @@ def initialize_session_state():
     # 动态偏科扣分列表
     if 'bias_penalties' not in st.session_state:
         st.session_state.bias_penalties = [
-            {"id": 0, "level": "轻微", "penalty": 10},
-            {"id": 1, "level": "明显", "penalty": 25},
-            {"id": 2, "level": "重度", "penalty": 45}
+            {"id": 0, "level": "轻微", "penalty": 20},
+            {"id": 1, "level": "明显", "penalty": 50},
+            {"id": 2, "level": "重度", "penalty": 100}
         ]
 
     # 默认参数配置
@@ -118,11 +110,18 @@ def initialize_session_state():
             "A线（排名）": 80,
             "A线过线奖励": 100,
             "B线（排名）": 430,
-            "B线过线奖励": 0,
+            "B线过线奖励": 20,
             **BIAS_DEFAULTS,
         }
 
+    previous_bias_params = dict(st.session_state.config_params)
     st.session_state.config_params = normalize_bias_params(st.session_state.config_params)
+    # Streamlit 的 number_input 会保留同一浏览器会话中的旧 widget 值。配置从旧
+    # 偏科规则升级时，需要删除这批缓存，才能让新的 20／50／100 默认值真正显示出来。
+    if previous_bias_params != st.session_state.config_params:
+        for key in list(st.session_state.keys()):
+            if key.startswith(("bias_v2_", "bias_v3_", "bias_v4_")):
+                del st.session_state[key]
     
     # 为已有会话补全持平规则，缺少新字段的旧配置采用新默认值。
     enabled, limit = get_tie_progress_rule(st.session_state.config_params)

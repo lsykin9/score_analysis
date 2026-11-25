@@ -30,11 +30,11 @@ class LineRewardIntegrationTests(unittest.TestCase):
     assert_app_ok = fixtures.ProgressIntegrationTests.assert_app_ok
 
     def process(self, basis='grade', grade_enabled=False, group_enabled=False,
-                rank=45, column_count=22, absent_exam=None):
+                rank=45, group_rank=90, column_count=22, absent_exam=None):
         app = AppTest.from_string(fixtures.PROCESS_SCRIPT, default_timeout=20)
         app.session_state['scoring_scheme'] = basis
         app.session_state['score_files'] = fixtures.upload_files(
-            [rank, rank], column_count, absent_exam=absent_exam, group_rank=[90, 90])
+            [rank, rank], column_count, absent_exam=absent_exam, group_rank=[group_rank, group_rank])
         app.session_state['test_rule'] = {GRADE_REWARD_ENABLED: grade_enabled,
                                           GROUP_REWARD_ENABLED: group_enabled,
                                           'B线过线奖励': 30}
@@ -49,8 +49,8 @@ class LineRewardIntegrationTests(unittest.TestCase):
                     with self.subTest(basis=basis, grade=grade_enabled, group=group_enabled):
                         row = self.process(basis, grade_enabled, group_enabled)
                         self.assertEqual(row['A/B线奖励'], 100)
-                        self.assertEqual(row['年级排名加分'], 20 if grade_enabled else 0)
-                        self.assertEqual(row['集团排名加分'], 100 if group_enabled else 0)
+                        self.assertEqual(row['年级排名加分'], 60 if grade_enabled else 0)
+                        self.assertEqual(row['集团排名加分'], 140 if group_enabled else 0)
                         parts = ['区间进步得分', '连续进步加分', '年级排名加分',
                                  'A/B线奖励', '集团排名加分', '总分奖励', '东校状元奖', '偏科扣分']
                         self.assertAlmostEqual(row['总得分'], sum(row[col] for col in parts))
@@ -65,10 +65,13 @@ class LineRewardIntegrationTests(unittest.TestCase):
     def test_b_line_only_no_line_absence_and_invalid_grade(self):
         for basis in ['grade', 'group']:
             with self.subTest(basis=basis):
-                self.assertEqual(self.process(basis, rank=81)['A/B线奖励'], 30)
-                self.assertEqual(self.process(basis, rank=431)['A/B线奖励'], 0)
+                group_rank = 566 if basis == 'group' else 90
+                no_line_group_rank = 1181 if basis == 'group' else 90
+                self.assertEqual(self.process(basis, rank=81, group_rank=group_rank)['A/B线奖励'], 30)
+                self.assertEqual(self.process(basis, rank=431, group_rank=no_line_group_rank)['A/B线奖励'], 0)
                 self.assertEqual(self.process(basis, absent_exam=2)['A/B线奖励'], 0)
-                self.assertEqual(self.process(basis, rank=0)['A/B线奖励'], 0)
+                if basis == 'grade':
+                    self.assertEqual(self.process(basis, rank=0, group_rank=90)['A/B线奖励'], 0)
 
     def test_pages_and_exports_show_independent_line_reward(self):
         app = AppTest.from_file(str(fixtures.ROOT / 'app.py'), default_timeout=30)

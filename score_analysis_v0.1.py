@@ -129,7 +129,7 @@ def ranking_bonus(now, before, config):
 
 
 def line_bonus_score(now, config):
-    """按当前年级排名计算 A/B 线奖励，两线同时达标时取较高奖励。"""
+    """按当前评分方案的排名计算 A/B 线奖励，两线同时达标时取较高奖励。"""
     if pd.isna(now) or now <= 0:
         return 0
     line_bonus = 0

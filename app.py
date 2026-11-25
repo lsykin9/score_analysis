@@ -1038,8 +1038,9 @@ with tab5:
         st.markdown("### 5️⃣ A/B线奖励")
         st.write(f"**A/B线奖励**: {student_score['A/B线奖励']:.1f}")
         with st.expander("查看 A/B 线奖励配置"):
-            st.write(f"**A线**: 排名≤{st.session_state.config_params.get('A线（排名）', 430)}名，奖励: {st.session_state.config_params.get('A线过线奖励', 5)}分")
-            st.write(f"**B线**: 排名≤{st.session_state.config_params.get('B线（排名）', 500)}名，奖励: {st.session_state.config_params.get('B线过线奖励', 3)}分")
+            line_basis = rank_basis_label(st.session_state.config_params)
+            st.write(f"**A线**: 总分{line_basis}排名≤{st.session_state.config_params.get('A线（排名）', 430)}名，奖励: {st.session_state.config_params.get('A线过线奖励', 5)}分")
+            st.write(f"**B线**: 总分{line_basis}排名≤{st.session_state.config_params.get('B线（排名）', 500)}名，奖励: {st.session_state.config_params.get('B线过线奖励', 3)}分")
         
         # 5. 集团排名加分
         if group_rank_cols and len(group_rank_cols) > 0:
@@ -1189,7 +1190,7 @@ with tab6:
                 {"项目": "评分方案", "设置": SCHEME_LABELS[get_rank_basis(st.session_state.config_params)]},
                 {"项目": "进步排名依据", "设置": f"总分{progress_basis}排名"},
                 {"项目": "年级排名奖励", "设置": "开启" if st.session_state.config_params.get(GRADE_REWARD_ENABLED, True) else "关闭"},
-                {"项目": "A/B线奖励", "设置": "独立计算，按年级排名达标发放，两线取较高奖励"},
+                {"项目": "A/B线奖励", "设置": f"独立计算，按总分{rank_basis_label(st.session_state.config_params)}排名达标发放，两线取较高奖励"},
                 {"项目": "集团排名奖励", "设置": "开启" if st.session_state.config_params.get(GROUP_REWARD_ENABLED, True) else "关闭"},
                 {"项目": f"限定{progress_basis}排名内持平计入连续进步", "设置": "开启" if tie_enabled else "关闭"},
                 {"项目": f"{progress_basis}排名上限（含）", "设置": tie_limit},

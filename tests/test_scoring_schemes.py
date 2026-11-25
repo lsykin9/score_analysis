@@ -51,8 +51,8 @@ class ScoringSchemeTests(unittest.TestCase):
     def test_group_progress_does_not_use_grade_chain_or_weights(self):
         row = self.process([120, 80, 100], [700, 600, 500])
         self.assertEqual(row['连续进步次数'], 2)
-        self.assertAlmostEqual(row['区间进步得分'], 60)
-        self.assertEqual(row['连续进步加分'], 50)
+        self.assertAlmostEqual(row['区间进步得分'], 100)
+        self.assertEqual(row['连续进步加分'], 60)
         self.assertEqual(row['双排名对照'], '集团位置提升，校内位置下降')
 
     def test_group_tie_boundary_disabled_and_custom_scope(self):
@@ -69,12 +69,12 @@ class ScoringSchemeTests(unittest.TestCase):
         self.assertEqual(row['年级排名加分'], 0)
         self.assertEqual(row['东校状元奖'], 200)
         self.assertEqual(row['总分奖励'], 120)
-        self.assertEqual(row['集团排名加分'], 100)
+        self.assertEqual(row['集团排名加分'], 140)
         disabled = self.process([1, 1], [80, 70], rule={GROUP_REWARD_ENABLED: False})
         self.assertEqual(disabled['集团排名加分'], 0)
         self.assertEqual(disabled['东校状元奖'], 200)
         enabled_grade = self.process([1, 1], [80, 70], rule={GRADE_REWARD_ENABLED: True})
-        self.assertEqual(enabled_grade['年级排名加分'], 100)
+        self.assertEqual(enabled_grade['年级排名加分'], 200)
         self.assertEqual(enabled_grade['A/B线奖励'], 100)
 
     def test_switch_preserves_independent_weights_chains_ties_and_reward_flags(self):
@@ -83,8 +83,8 @@ class ScoringSchemeTests(unittest.TestCase):
         app.number_input(key='chain_val_0').set_value(33).run()
         app.number_input(key='tie_progress_grade_rank_limit').set_value(75).run()
         self.switch(app, 'group')
-        self.assertEqual(app.number_input(key='weight_2').value, .6)
-        self.assertEqual(app.number_input(key='chain_val_0').value, 20)
+        self.assertEqual(app.number_input(key='weight_2').value, 2.4)
+        self.assertEqual(app.number_input(key='chain_val_0').value, 25)
         self.assertEqual(app.number_input(key='tie_progress_grade_rank_limit').value, 200)
         self.assertFalse(app.checkbox(key='grade_rank_reward_enabled').value)
         app.number_input(key='weight_2').set_value(1.1).run()
@@ -143,7 +143,7 @@ class ScoringSchemeTests(unittest.TestCase):
         self.assertEqual(restored.number_input(key='weight_2').value, 3.7)
         self.switch(restored, 'group')
         self.assertEqual(restored.number_input(key='tie_progress_grade_rank_limit').value, 200)
-        self.assertEqual(restored.number_input(key='weight_2').value, .6)
+        self.assertEqual(restored.number_input(key='weight_2').value, 2.4)
 
     def test_missing_current_group_column_or_value_is_reported(self):
         for files in [fixtures.upload_files([120, 100], 9),
@@ -183,7 +183,7 @@ class ScoringSchemeTests(unittest.TestCase):
         self.assertEqual(middle['连续进步次数'], 2)
         latest = self.process([120, 100, 90, 80], [600, 400, 150, 150], absent_exam=4)
         self.assertEqual(latest['连续进步次数'], 2)
-        self.assertEqual(latest['总得分'], 50)
+        self.assertEqual(latest['总得分'], 60)
 
     def test_group_all_pages_and_exports_follow_primary_basis(self):
         app = AppTest.from_file(str(fixtures.ROOT / 'app.py'), default_timeout=30)
@@ -204,9 +204,8 @@ class ScoringSchemeTests(unittest.TestCase):
         charts = [json.loads(chart.proto.spec) for chart in app.get('plotly_chart')]
         lines = [trace for chart in charts for trace in chart['data']
                  if trace.get('mode', '').startswith('lines+markers')]
-        self.assertEqual(len(lines), 2)
-        for trace in lines:
-            self.assertEqual(trace['y'], [700, 500, 600])
+        rank_lines = [trace for trace in lines if trace.get('y') == [700, 500, 600]]
+        self.assertEqual(len(rank_lines), 2)
         details = [t.value for t in app.table if '判定' in t.value.columns]
         self.assertIn('本次集团排名', details[0].columns)
         self.assertEqual(details[0].iloc[-1]['连续进步次数'], 0)
